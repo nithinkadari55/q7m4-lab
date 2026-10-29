@@ -1,0 +1,72 @@
+name: Native research probes
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Select pinned toolchain
+        shell: pwsh
+        run: |
+          rustup show
+          rustc --version --verbose
+          cargo --version
+      - name: Resolve dependencies
+        shell: pwsh
+        run: |
+          if (!(Test-Path Cargo.lock)) { cargo generate-lockfile }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo metadata --locked --format-version 1 > dependencies.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Check and build diagnostic
+        shell: pwsh
+        run: |
+          cargo fmt --all
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo clippy --locked --all-targets --target x86_64-pc-windows-msvc -- -D warnings
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo build --locked --release --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Record artifact identity
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path artifact | Out-Null
+          Copy-Item target/x86_64-pc-windows-msvc/release/native-research-probes.exe artifact/
+          Copy-Item Cargo.lock artifact/
+          Copy-Item dependencies.json artifact/
+          $manifest = @{
+            commit = '${{ github.sha }}'
+            run_id = '${{ github.run_id }}'
+            target = 'x86_64-pc-windows-msvc'
+            rustc = (rustc --version --verbose | Out-String)
+            executable_sha256 = (Get-FileHash artifact/native-research-probes.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          }
+          $manifest | ConvertTo-Json | Set-Content artifact/manifest.json -Encoding utf8
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-probes-windows-x64
+          path: |
+            artifact/native-research-probes.exe
+            artifact/Cargo.lock
+            artifact/dependencies.json
+            artifact/manifest.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Preserve diagnostic bootstrap files
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: bootstrap-source
+          path: |
+            src/main.rs
+            Cargo.lock
+          if-no-files-found: error
+          retention-days: 7
