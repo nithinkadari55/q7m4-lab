@@ -213,11 +213,11 @@ fn invoke(
             Some(&mut arg_error),
         )
     };
-    if result.is_err() {
-        if let Some(fill) = ex.pfnDeferredFillIn {
-            unsafe {
-                let _ = fill(&mut ex);
-            }
+    if result.is_err()
+        && let Some(fill) = ex.pfnDeferredFillIn
+    {
+        unsafe {
+            let _ = fill(&mut ex);
         }
     }
     let error = result.err().map(|e| {
@@ -226,8 +226,8 @@ fn invoke(
             e.code().0,
             ex.scode,
             arg_error,
-            ex.bstrSource.to_string(),
-            ex.bstrDescription.to_string()
+            *ex.bstrSource,
+            *ex.bstrDescription
         )
     });
     unsafe {
@@ -338,7 +338,7 @@ fn excel_checks(owner: &mut OwnedExcel, report: &mut Vec<Value>) -> ProbeResult<
     )?
     .dispatch()?;
     let values = [
-        OwnedVariant::text("Unicode ÃŽÂ© Ã¤Â¸Â­Ã¦â€“â€¡"),
+        OwnedVariant::text("Unicode \u{03a9} \u{4e2d}\u{6587}"),
         OwnedVariant::boolean(true),
         OwnedVariant::number(42.125),
         OwnedVariant::default(),
