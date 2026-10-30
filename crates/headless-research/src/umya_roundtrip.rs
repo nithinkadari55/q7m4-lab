@@ -8,7 +8,8 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
-    fs::{self, File, OpenOptions},
+    fmt::Write as _,
+    fs::{File, OpenOptions},
     io::{self, Cursor, Read, Write},
     path::{Path, PathBuf},
 };
@@ -46,7 +47,11 @@ fn read_bounded(path: &Path, cap: u64) -> ProbeResult<Vec<u8>> {
 }
 
 fn hash(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    let mut encoded = String::with_capacity(64);
+    for byte in Sha256::digest(bytes) {
+        write!(&mut encoded, "{byte:02x}").expect("format into String");
+    }
+    encoded
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
