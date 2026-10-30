@@ -38,7 +38,7 @@ jobs:
       - name: Check and build diagnostic
         shell: pwsh
         run: |
-          cargo fmt --all
+          cargo fmt --all -- --check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --locked --all-features --target x86_64-pc-windows-msvc
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
