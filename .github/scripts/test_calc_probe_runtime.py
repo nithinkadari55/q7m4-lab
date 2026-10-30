@@ -126,7 +126,7 @@ def inspect(document):
 def valid_receipt():
     inspected = inspect(Document())
     worker = {**inspected, "worker_finished": True, "source_sha256": "owned-source", "source_unchanged": True,
-              "calculation_completed": True, "export_completed": True,
+              "calculation_completed": True, "export_completed": True, "observation_mode": "cells",
               "cleanup": {"document_close": "completed", "desktop_terminate": "completed"}}
     return {"probe_errors": [], "source_sha256": "owned-source", "source_unchanged": True,
             "supervisor": {"returncode": 0, "stdio_within_bound": True, "group_absent": True},
@@ -136,6 +136,49 @@ def valid_receipt():
 
 
 class DiagnosticFaultControls(unittest.TestCase):
+    def test_export_only_control_never_claims_memory_observation(self):
+        report = {"probe_errors": []}
+        doc = Document()
+        with tempfile.TemporaryDirectory() as tmp, patch.object(rt, "inspect_document", side_effect=AssertionError("inspection forbidden in control")):
+            rt.execute_workbook(doc, Path(tmp) / "new.xlsx", CASES, report, lambda _: None, lambda n, v: (n, v), "export-only")
+        self.assertTrue(doc.stored)
+        self.assertFalse(report["in_memory_observation_complete"])
+        self.assertEqual(report["observation_mode"], "export-only")
+        self.assertNotIn("cases", report)
+
+    def test_modes_cannot_substitute_for_each_other_or_hide_calculation_failure(self):
+        report = valid_receipt()
+        report["observation_mode"] = "export-only"
+        self.assertEqual(rt.decide_report(report, "uno", CASES), 2)
+        worker = report["worker"]
+        worker.update(observation_mode="export-only", in_memory_observation_complete=False,
+                      in_memory_observation_skipped="export-only control")
+        worker.pop("cases")
+        worker.pop("controls")
+        self.assertEqual(rt.decide_report(report, "uno", CASES), 0)
+        worker["calculation_completed"] = False
+        self.assertEqual(rt.decide_report(report, "uno", CASES), 2)
+        worker["calculation_completed"] = True
+        report["observation_mode"] = "cells"
+        self.assertEqual(rt.decide_report(report, "uno", CASES), 2)
+
+    def test_runtime_receipt_contains_hashes_and_versions_without_local_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "synthetic-module"
+            path.write_bytes(b"synthetic runtime identity")
+            with patch.dict(os.environ, {"CALC_CLIENT_FAMILY": "unqualified"}):
+                result = rt.runtime_identity(NS(__file__=path), NS(__file__=path))
+            self.assertEqual(set(result), {"python_version", "python_binary", "uno_sha256", "pyuno_sha256", "client_family"})
+            self.assertEqual(len(result["uno_sha256"]), 64)
+            self.assertNotIn(str(Path(tmp)), json.dumps(result))
+
+    def test_vendor_client_rejects_fallback_or_unqualified_modules(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "synthetic-module"
+            path.write_bytes(b"unexpected runtime")
+            with patch.dict(os.environ, {"CALC_CLIENT_FAMILY": "tdf-bundled"}), self.assertRaises(ValueError):
+                rt.runtime_identity(NS(__file__=path), NS(__file__=path))
+
     def test_collects_early_and_late_cell_failures_and_still_exports(self):
         doc = Document({("Inputs", "B1", "all"), ("Calc", "P1", "all")})
         report = {"probe_errors": []}

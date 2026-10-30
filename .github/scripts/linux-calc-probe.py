@@ -99,11 +99,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--generate", type=Path)
     parser.add_argument("--driver", choices=("cli", "uno"), default="cli")
+    parser.add_argument("--observation", choices=("cells", "export-only"), default="cells")
     parser.add_argument("--uno-worker", nargs=3, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.uno_worker:
         try:
-            status = runtime.uno_worker(*args.uno_worker, CASES, QUALIFIED_PART_SHA256)
+            status = runtime.uno_worker(*args.uno_worker, CASES, QUALIFIED_PART_SHA256, args.observation)
         except Exception as error:
             print(json.dumps({"stage": "worker_admission_or_receipt", "exception_type": type(error).__name__}), file=sys.stderr)
             status = 2
@@ -111,4 +112,4 @@ if __name__ == "__main__":
     if args.generate:
         print(generate(args.generate))
     else:
-        raise SystemExit(runtime.run(args.driver, generate, CASES, QUALIFIED_PART_SHA256))
+        raise SystemExit(runtime.run(args.driver, generate, CASES, QUALIFIED_PART_SHA256, args.observation))

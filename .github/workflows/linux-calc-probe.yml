@@ -5,14 +5,28 @@ permissions:
   contents: read
 jobs:
   synthetic-calculation:
-    name: ${{ matrix.engine }} / ${{ matrix.driver }}
+    name: ${{ matrix.engine }} / ${{ matrix.client }} / ${{ matrix.observation }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        engine: [distribution, tdf-26.8.2]
-        driver: [cli, uno]
+        include:
+          - engine: distribution
+            client: distribution
+            observation: cells
+          - engine: tdf-26.8.2
+            client: distribution
+            observation: cells
+          - engine: tdf-26.8.2
+            client: tdf-bundled
+            observation: cells
+          - engine: tdf-26.8.2
+            client: distribution
+            observation: export-only
+          - engine: tdf-26.8.2
+            client: tdf-bundled
+            observation: export-only
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -44,11 +58,24 @@ jobs:
             dpkg-deb --extract "$package" "$RUNNER_TEMP/tdf-root"
           done
           echo "CALC_EXECUTABLE=$RUNNER_TEMP/tdf-root/opt/libreoffice26.8/program/soffice" >> "$GITHUB_ENV"
+      - name: Select the reviewed client and check its own fault controls
+        shell: bash
+        env:
+          CLIENT: ${{ matrix.client }}
+        run: |
+          probe_python=/usr/bin/python3
+          if [[ "$CLIENT" == 'tdf-bundled' ]]; then
+            probe_python="$RUNNER_TEMP/tdf-root/opt/libreoffice26.8/program/python"
+            test -x "$probe_python"
+          fi
+          echo "CALC_PYTHON=$probe_python" >> "$GITHUB_ENV"
+          "$probe_python" -m unittest discover -s .github/scripts -p test_calc_probe_runtime.py -v
       - name: Compare only authored synthetic cases
         shell: bash
         timeout-minutes: 4
         env:
-          DRIVER: ${{ matrix.driver }}
+          OBSERVATION: ${{ matrix.observation }}
+          CALC_CLIENT_FAMILY: ${{ matrix.client }}
         run: |
-          /usr/bin/python3 .github/scripts/linux-calc-probe.py --driver "$DRIVER"
+          "$CALC_PYTHON" .github/scripts/linux-calc-probe.py --driver uno --observation "$OBSERVATION"
       # Deliberately no workbook, profile, conversion log, or results upload.

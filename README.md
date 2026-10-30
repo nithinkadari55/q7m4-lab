@@ -26,8 +26,14 @@ is a disposable research harness, not a production backend. It does not establis
 dynamic-array, advanced-object or round-trip fidelity. Workbooks and detailed
 runtime observations are not uploaded; the log contains reviewed case identifiers,
 statuses and provenance.
-One manual calculation dispatch runs the four engine/driver combinations with
-fail-fast disabled. Offline fault controls run before engine setup; the runtime
+The current manual calculation dispatch compares five client/observation setups
+with fail-fast disabled: a distribution pair, mixed old-client/new-server and
+matched vendor pairs, with export-only controls for the latter two. The vendor
+client is checked against the inspected archive's Python/UNO module hashes and
+Python version; no silent fallback to the distribution client is accepted.
+Export-only controls explicitly report that memory values were not observed.
+Conversion-only CLI controls remain available in the script and earlier cohorts.
+Offline fault controls run before engine setup and under the selected interpreter; the runtime
 retains bounded partial receipts and reports independent case/API/cleanup failures
 together. Probe failures and observed compatibility mismatches have separate exit
 codes. Runtime summaries contain reviewed identifiers and statuses, not cell values.

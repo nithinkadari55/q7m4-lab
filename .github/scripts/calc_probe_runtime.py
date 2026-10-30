@@ -221,7 +221,10 @@ def close_owned(document, desktop, report, persist):
             report["probe_errors"].append(issue("cleanup_receipt", error))
 
 
-def execute_workbook(document, destination, cases, report, persist, prop):
+def execute_workbook(document, destination, cases, report, persist, prop, observation="cells"):
+    if observation not in ("cells", "export-only"):
+        raise ValueError("unknown observation mode")
+    report["observation_mode"] = observation
     report["stage"] = "calculate"
     persist(report)
     try:
@@ -230,10 +233,14 @@ def execute_workbook(document, destination, cases, report, persist, prop):
         report["calculation_completed"] = True
     except Exception as error:
         report["probe_errors"].append(issue("calculate", error))
-    try:
-        inspect_document(document, cases, report, persist)
-    except Exception as error:
-        report["probe_errors"].append(issue("inspection", error))
+    if observation == "cells":
+        try:
+            inspect_document(document, cases, report, persist)
+        except Exception as error:
+            report["probe_errors"].append(issue("inspection", error))
+    else:
+        report["in_memory_observation_complete"] = False
+        report["in_memory_observation_skipped"] = "export-only control"
     report["stage"] = "store"
     persist(report)
     try:
@@ -243,7 +250,7 @@ def execute_workbook(document, destination, cases, report, persist, prop):
         report["probe_errors"].append(issue("store", error))
 
 
-def uno_worker(connection, source, destination, cases, expected_parts):
+def uno_worker(connection, source, destination, cases, expected_parts, observation="cells"):
     source, destination = Path(source), Path(destination)
     receipt = destination.parent / "worker-receipt.json"
     report = {"stage": "admission", "probe_errors": [], "calculation_completed": False,
@@ -267,6 +274,9 @@ def uno_worker(connection, source, destination, cases, expected_parts):
         report["stage"] = "bootstrap"
         persist(report)
         import uno
+        import pyuno
+        report["client_runtime"] = runtime_identity(uno, pyuno)
+        persist(report)
 
         def prop(name, value):
             result = uno.createUnoStruct("com.sun.star.beans.PropertyValue")
@@ -292,7 +302,7 @@ def uno_worker(connection, source, destination, cases, expected_parts):
             prop("MacroExecutionMode", 0), prop("RepairPackage", False)))
         if document is None or not document.supportsService("com.sun.star.sheet.SpreadsheetDocument") or document.getURL() != source.as_uri():
             raise ValueError("loaded document identity unverified")
-        execute_workbook(document, destination, cases, report, persist, prop)
+        execute_workbook(document, destination, cases, report, persist, prop, observation)
         report["source_unchanged"] = hashlib.sha256(source.read_bytes()).hexdigest() == before
     except Exception as error:
         report["probe_errors"].append(issue(report["stage"], error))
@@ -434,6 +444,29 @@ def compare_export(model, cases):
     return {"cases": rows, "literal_controls_match": all(controls), "formula_presence_preserved": all(row["formula_preserved"] for row in rows)}
 
 
+def runtime_identity(uno, pyuno):
+    """Reviewed runtime identities only; no paths or workbook observations."""
+    result = {"python_version": sys.version.split()[0], "python_binary": Path(sys.executable).name}
+    for name, module in (("uno", uno), ("pyuno", pyuno)):
+        path = Path(module.__file__).resolve()
+        if not path.is_file() or path.stat().st_size > 32 * 1024 * 1024:
+            raise ValueError("unexpected runtime module")
+        result[name + "_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+    family = os.environ.get("CALC_CLIENT_FAMILY", "unqualified")
+    result["client_family"] = family
+    if family == "tdf-bundled":
+        program = Path(sys.executable).resolve().parent
+        qualified = sys.version_info[:3] == (3, 13, 17) and result["python_binary"] == "python.bin"
+        qualified = qualified and all(Path(module.__file__).resolve().parent == program for module in (uno, pyuno))
+        qualified = qualified and result["uno_sha256"] == "b3595c91a0660ad99e85f82504b9efe1092f2dd6fa9300e27d02180a42aa4183"
+        qualified = qualified and result["pyuno_sha256"] == "eb9869f1be6ccf8438cfd98d10fcb08fa365836d03145b002b956711eb73998a"
+        qualified = qualified and hashlib.sha256(Path(sys.executable).read_bytes()).hexdigest() == "f452268aa72a96fa6400f38db833591bfdaea9518b079cb02b7bd10c3551f909"
+        if not qualified:
+            raise ValueError("vendor client differs from inspected package")
+        result["vendor_client_qualified"] = True
+    return result
+
+
 def decide_report(report, driver, cases):
     expected_ids = {row[5] for row in cases}
     def exact(rows, ids):
@@ -445,21 +478,32 @@ def decide_report(report, driver, cases):
     matched = bool(valid) and exported.get("literal_controls_match") is True and exported.get("formula_presence_preserved") is True and all(row.get("matches_expected") is True for row in exported["cases"])
     if driver == "uno":
         worker = report.get("worker") or {}
+        observation = report.get("observation_mode", "cells")
         control_ids = {"control-" + s + "-" + a for s, a, _ in CONTROLS}
         valid = valid and report.get("server_cleanup", {}).get("group_absent") is True and not report.get("server_cleanup", {}).get("forced_cleanup") and not report.get("server_cleanup", {}).get("errors")
-        valid = valid and worker.get("source_sha256") == report.get("source_sha256") and worker.get("worker_finished") is True and worker.get("export_completed") is True and not worker.get("probe_errors") and worker.get("source_unchanged") is True and worker.get("calculation_completed") is True and worker.get("in_memory_observation_complete") is True
-        valid = valid and exact(worker.get("cases", []), expected_ids) and exact(worker.get("controls", []), control_ids)
-        valid = valid and all(row.get("observation_complete") is True for row in worker.get("cases", []) + worker.get("controls", []))
+        valid = valid and worker.get("source_sha256") == report.get("source_sha256") and worker.get("worker_finished") is True and worker.get("export_completed") is True and not worker.get("probe_errors") and worker.get("source_unchanged") is True and worker.get("calculation_completed") is True
+        valid = valid and observation in ("cells", "export-only") and worker.get("observation_mode") == observation
+        if observation == "cells":
+            valid = valid and worker.get("in_memory_observation_complete") is True
+            valid = valid and exact(worker.get("cases", []), expected_ids) and exact(worker.get("controls", []), control_ids)
+            valid = valid and all(row.get("observation_complete") is True for row in worker.get("cases", []) + worker.get("controls", []))
+        else:
+            valid = valid and worker.get("in_memory_observation_complete") is False and worker.get("in_memory_observation_skipped") == "export-only control"
+            valid = valid and not worker.get("cases") and not worker.get("controls")
         valid = valid and worker.get("cleanup") == {"document_close": "completed", "desktop_terminate": "completed"}
-        matched = bool(valid and matched) and all(row.get("matches_expected") is True for row in worker.get("cases", []) + worker.get("controls", []))
+        matched = bool(valid and matched)
+        if observation == "cells":
+            matched = matched and all(row.get("matches_expected") is True for row in worker.get("cases", []) + worker.get("controls", []))
     report["diagnostic_complete"] = bool(valid)
     report["compatibility_matches"] = bool(valid and matched)
     return 2 if not valid else 0 if matched else 1
 
 
-def run(driver, generate, cases, expected_parts):
+def run(driver, generate, cases, expected_parts, observation="cells"):
     if os.name != "posix":
         raise RuntimeError("Linux process supervisor required")
+    if observation not in ("cells", "export-only"):
+        raise ValueError("unknown observation mode")
     executable = os.environ.get("CALC_EXECUTABLE", "libreoffice")
     version = subprocess.check_output([executable, "--version"], timeout=15, text=True).strip()
     with tempfile.TemporaryDirectory(prefix="calc-research-") as tmp:
@@ -469,7 +513,7 @@ def run(driver, generate, cases, expected_parts):
         output.mkdir()
         destination, profile = output / source.name, root / "profile"
         before = source_admission(source, destination, expected_parts)
-        report = {"engine": version, "driver": driver, "source_sha256": before,
+        report = {"engine": version, "driver": driver, "source_sha256": before, "observation_mode": observation,
                   "native_qualified_source_part_bytes": True, "case_count": len(cases), "probe_errors": [],
                   "detailed_artifacts_uploaded": False}
         server = None
@@ -478,7 +522,7 @@ def run(driver, generate, cases, expected_parts):
             if driver == "uno":
                 connection = "pipe,name=synthetic_calc_" + uuid.uuid4().hex
                 server = subprocess.Popen(arguments + ["--accept=" + connection + ";urp;StarOffice.ServiceManager"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-                report["supervisor"] = supervise([sys.executable, str(Path(sys.argv[0]).resolve()), "--uno-worker", connection, str(source), str(destination)], root / "bridge.stdout", root / "bridge.stderr", 150)
+                report["supervisor"] = supervise([sys.executable, str(Path(sys.argv[0]).resolve()), "--observation", observation, "--uno-worker", connection, str(source), str(destination)], root / "bridge.stdout", root / "bridge.stderr", 150)
                 try:
                     report["worker"] = load_receipt(output / "worker-receipt.json")
                 except Exception as error:
