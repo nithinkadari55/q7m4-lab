@@ -184,7 +184,8 @@ def uno_worker(connection, source, destination):
             prop("FilterName", "Calc MS Excel 2007 XML"), prop("Overwrite", False)))
         print(json.dumps({"in_memory_cases": len(CASES), "in_memory_mismatches": memory_mismatches}))
     finally:
-        WORKER_STAGE = "close"
+        if sys.exc_info()[0] is None:
+            WORKER_STAGE = "close"
         if document is not None:
             document.close(True)
         desktop.terminate()
