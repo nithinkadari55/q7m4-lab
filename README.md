@@ -12,6 +12,9 @@ between both operating systems. Its parser corpus and memory-only XLSX codec
 test run on both hosts. The `umya-roundtrip-probe` executable separately tests a
 marked synthetic fixture, writes a new candidate, and reports package loss even
 when the requested cell edit succeeds. Do not use it on business workbooks.
+The separate `aspose-roundtrip-probe` compares a pinned FOSS editor on the same
+marked fixtures. It records requested strict/repair flags without treating them
+as enforced policy, and distinguishes supplied/stale caches from calculation.
 
 Only reviewed source code, build workflows and synthetic fixtures belong in this
 public checkout. Detailed observations and local working material are retained

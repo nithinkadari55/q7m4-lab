@@ -12,7 +12,12 @@ path = "src/umya_roundtrip.rs"
 name = "parser-portability-probe"
 path = "src/parser_portability.rs"
 
+[[bin]]
+name = "aspose-roundtrip-probe"
+path = "src/aspose_roundtrip.rs"
+
 [dependencies]
+aspose-cells-foss-rust = { git = "https://github.com/aspose-cells-foss/Aspose.Cells-FOSS-for-Rust", rev = "1a6004af47b1ef15385f9d36d381a8172428cc7e" }
 umya-spreadsheet = "=3.1.1"
 zip = { version = "=8.6.0", default-features = false, features = ["deflate"] }
 sha2 = "=0.11.0"

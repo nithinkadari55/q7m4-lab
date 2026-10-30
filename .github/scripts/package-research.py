@@ -12,7 +12,7 @@ suffix = ".exe" if target.endswith("windows-msvc") else ""
 destination = Path("artifact")
 destination.mkdir(exist_ok=False)
 hashes = {}
-for binary in ("umya-roundtrip-probe", "parser-portability-probe"):
+for binary in ("umya-roundtrip-probe", "parser-portability-probe", "aspose-roundtrip-probe"):
     name = binary + suffix
     source = Path("target") / target / "release" / name
     shutil.copyfile(source, destination / name)
