@@ -7,15 +7,8 @@ is uploaded. A passing comparison is limited to these cases and this engine buil
 import argparse
 import hashlib
 import json
-import math
-import os
 from pathlib import Path
-import signal
-import subprocess
 import sys
-import tempfile
-import time
-import uuid
 import xml.etree.ElementTree as E
 import zipfile
 
@@ -49,7 +42,6 @@ CASES = [
     ("Calc", "O1", "COUNT(Inputs!A1:A2)", 0, 1, "count-text-exclusion"),
     ("Calc", "P1", '_xlfn.TEXTJOIN("-",TRUE,Inputs!A1:A2)', "old", "9-3", "textjoin"),
 ]
-WORKER_STAGE = "not_started"
 
 
 def generate(directory):
@@ -101,191 +93,9 @@ def generate(directory):
     return path
 
 
-def read_results(path):
-    with zipfile.ZipFile(path) as archive:
-        if len(archive.infolist()) > 256 or sum(p.file_size for p in archive.infolist()) > 8 * 1024 * 1024:
-            raise ValueError("diagnostic output archive bounds")
-        strings = []
-        if "xl/sharedStrings.xml" in archive.namelist():
-            for si in E.fromstring(archive.read("xl/sharedStrings.xml")).findall("{" + S + "}si"):
-                strings.append("".join(t.text or "" for t in si.iter("{" + S + "}t")))
-        book = E.fromstring(archive.read("xl/workbook.xml"))
-        rels = {r.get("Id"): r.get("Target") for r in E.fromstring(archive.read("xl/_rels/workbook.xml.rels"))}
-        values = {}
-        for sheet in book.findall("./{" + S + "}sheets/{" + S + "}sheet"):
-            target = rels[sheet.get("{" + R + "}id")]
-            part = target.lstrip("/") if target.startswith("/") else "xl/" + target
-            root = E.fromstring(archive.read(part))
-            for cell in root.iter("{" + S + "}c"):
-                element = cell.find("{" + S + "}v")
-                text = None if element is None else element.text
-                kind = cell.get("t", "n")
-                if kind == "s" and text is not None:
-                    value = strings[int(text)]
-                elif kind == "n" and text is not None:
-                    value = float(text)
-                elif kind == "inlineStr":
-                    value = "".join(t.text or "" for t in cell.iter("{" + S + "}t"))
-                else:
-                    value = text
-                values[sheet.get("name"), cell.get("r")] = value
-        return values
-
-
-def uno_worker(connection, source, destination):
-    global WORKER_STAGE
-    WORKER_STAGE = "bootstrap"
-    # Import only in the disposable Linux system-Python bridge process.
-    import uno
-
-    def prop(name, value):
-        result = uno.createUnoStruct("com.sun.star.beans.PropertyValue")
-        result.Name, result.Value = name, value
-        return result
-
-    local = uno.getComponentContext()
-    resolver = local.ServiceManager.createInstanceWithContext("com.sun.star.bridge.UnoUrlResolver", local)
-    deadline = time.monotonic() + 15
-    while True:
-        try:
-            context = resolver.resolve("uno:" + connection + ";urp;StarOffice.ComponentContext")
-            break
-        except Exception:
-            if time.monotonic() >= deadline:
-                raise RuntimeError("owned UNO bridge did not become ready") from None
-            time.sleep(.1)
-    desktop = context.ServiceManager.createInstanceWithContext("com.sun.star.frame.Desktop", context)
-    document = None
-    try:
-        WORKER_STAGE = "load"
-        document = desktop.loadComponentFromURL(Path(source).as_uri(), "_blank", 0, (
-            prop("Hidden", True), prop("ReadOnly", False), prop("UpdateDocMode", 0),
-            prop("MacroExecutionMode", 0), prop("RepairPackage", False)))
-        if document is None:
-            raise RuntimeError("synthetic document load returned no component")
-        document.enableAutomaticCalculation(False)
-        WORKER_STAGE = "calculate"
-        document.calculateAll()
-        memory_mismatches = []
-        WORKER_STAGE = "sheet_collection"
-        sheets = document.getSheets()
-        for sheet, address, _, old_cache, expected, identifier in CASES:
-            WORKER_STAGE = "sheet_lookup_" + identifier
-            worksheet = sheets.getByName(sheet)
-            WORKER_STAGE = "cell_access_" + identifier
-            cell = worksheet.getCellRangeByName(address)
-            WORKER_STAGE = "cell_error_" + identifier
-            if cell.getError():
-                memory_mismatches.append({"case_id": identifier, "classification": "calculated_cell_error"})
-            else:
-                WORKER_STAGE = "cell_value_" + identifier
-                actual = cell.getString() if isinstance(expected, str) else cell.getValue()
-                match = actual == expected if isinstance(expected, str) else math.isclose(actual, expected, rel_tol=0, abs_tol=1e-10)
-                if not match:
-                    memory_mismatches.append({"case_id": identifier, "classification": "retained_source_cache" if actual == old_cache else "nonmatching_result"})
-        WORKER_STAGE = "store"
-        document.storeAsURL(Path(destination).as_uri(), (
-            prop("FilterName", "Calc MS Excel 2007 XML"), prop("Overwrite", False)))
-        print(json.dumps({"in_memory_cases": len(CASES), "in_memory_mismatches": memory_mismatches}))
-    finally:
-        if sys.exc_info()[0] is None:
-            WORKER_STAGE = "close"
-        if document is not None:
-            document.close(True)
-        desktop.terminate()
-
-
-def convert_uno(source, destination, profile, executable):
-    connection = "pipe,name=synthetic_calc_" + uuid.uuid4().hex
-    server = subprocess.Popen([executable, "-env:UserInstallation=" + profile.as_uri(),
-        "--headless", "--nologo", "--nodefault", "--norestore",
-        "--accept=" + connection + ";urp;StarOffice.ServiceManager"],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-    bridge = None
-    try:
-        bridge = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "--uno-worker",
-            connection, str(source), str(destination)], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, start_new_session=True)
-        try:
-            stdout, stderr = bridge.communicate(timeout=150)
-        except subprocess.TimeoutExpired:
-            raise RuntimeError("owned UNO bridge timed out") from None
-        if bridge.returncode:
-            # The worker emits a controlled stage/class receipt, no values/dump.
-            try:
-                failure = json.loads(stderr)
-            except json.JSONDecodeError:
-                failure = {"stage": "unclassified", "exception_type": "unclassified"}
-            raise RuntimeError("owned UNO bridge failed: " + json.dumps(failure))
-        memory = json.loads(stdout)
-        if memory.get("in_memory_cases") != len(CASES):
-            raise RuntimeError("incomplete in-memory calculation observation")
-        try:
-            server.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            raise RuntimeError("owned UNO server did not exit after terminate") from None
-        return memory
-    finally:
-        for owned in (bridge, server):
-            if owned is not None and owned.poll() is None:
-                os.killpg(owned.pid, signal.SIGKILL)
-                owned.wait(timeout=15)
-
-
-def run(driver):
-    if os.name != "posix":
-        raise RuntimeError("Linux-only process-group diagnostic")
-    executable = os.environ.get("CALC_EXECUTABLE", "libreoffice")
-    version = subprocess.check_output([executable, "--version"], timeout=15, text=True).strip()
-    with tempfile.TemporaryDirectory(prefix="calc-research-") as tmp:
-        root = Path(tmp)
-        source = generate(root / "input")
-        initial_hash = hashlib.sha256(source.read_bytes()).hexdigest()
-        output = root / "output"
-        output.mkdir()
-        profile = root / "profile"
-        result = output / source.name
-        memory = None
-        if driver == "uno":
-            memory = convert_uno(source, result, profile, executable)
-        else:
-            process = subprocess.Popen([executable, "-env:UserInstallation=" + profile.as_uri(),
-                "--headless", "--nologo", "--nodefault", "--norestore", "--convert-to",
-                "xlsx:Calc MS Excel 2007 XML", "--outdir", str(output), str(source)],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
-            try:
-                stdout, stderr = process.communicate(timeout=120)
-            except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.communicate(timeout=15)
-                raise RuntimeError("owned conversion process timed out") from None
-            if process.returncode != 0:
-                raise RuntimeError("owned conversion process failed")
-        if not result.is_file():
-            raise RuntimeError("conversion did not create the expected private candidate")
-        assert hashlib.sha256(source.read_bytes()).hexdigest() == initial_hash
-        observed = read_results(result)
-        mismatches = []
-        classes = []
-        for sheet, cell, _, old_cache, expected, identifier in CASES:
-            actual = observed.get((sheet, cell))
-            match = actual == expected if isinstance(expected, str) else isinstance(actual, (int, float)) and math.isclose(actual, expected, rel_tol=0, abs_tol=1e-10)
-            if not match:
-                mismatches.append(identifier)
-                reason = "retained_source_cache" if actual == old_cache else "missing_value" if actual is None else "error_token" if isinstance(actual, str) and actual.startswith("#") else "nonmatching_result"
-                classes.append({"case_id": identifier, "classification": reason})
-        # Emit reviewed case identifiers only, never detailed workbook results.
-        print(json.dumps({"engine": version, "driver": driver, "source_sha256": initial_hash,
-                          "case_count": len(CASES), "mismatch_case_ids": mismatches, "mismatch_classes": classes,
-                          "calculated_in_memory": memory,
-                          "input_text_type_retained": observed.get(("Inputs", "A1")) == "9",
-                          "native_qualified_source_part_bytes": True,
-                          "source_unchanged": True, "detailed_artifacts_uploaded": False}))
-        if mismatches or (memory is not None and memory["in_memory_mismatches"]):
-            raise SystemExit(1)
-
-
 if __name__ == "__main__":
+    import calc_probe_runtime as runtime
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--generate", type=Path)
     parser.add_argument("--driver", choices=("cli", "uno"), default="cli")
@@ -293,11 +103,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.uno_worker:
         try:
-            uno_worker(*args.uno_worker)
+            status = runtime.uno_worker(*args.uno_worker, CASES, QUALIFIED_PART_SHA256)
         except Exception as error:
-            print(json.dumps({"stage": WORKER_STAGE, "exception_type": type(error).__name__}), file=sys.stderr)
-            raise SystemExit(1) from None
-    elif args.generate:
+            print(json.dumps({"stage": "worker_admission_or_receipt", "exception_type": type(error).__name__}), file=sys.stderr)
+            status = 2
+        raise SystemExit(status)
+    if args.generate:
         print(generate(args.generate))
     else:
-        run(args.driver)
+        raise SystemExit(runtime.run(args.driver, generate, CASES, QUALIFIED_PART_SHA256))

@@ -24,7 +24,13 @@ distribution build of LibreOffice against authored synthetic scalar cases,
 including stale caches, names, LET, LAMBDA and a date boundary. Its Python driver
 is a disposable research harness, not a production backend. It does not establish
 dynamic-array, advanced-object or round-trip fidelity. Workbooks and detailed
-runtime observations are not uploaded; the log names only mismatching case IDs.
+runtime observations are not uploaded; the log contains reviewed case identifiers,
+statuses and provenance.
+One manual calculation dispatch runs the four engine/driver combinations with
+fail-fast disabled. Offline fault controls run before engine setup; the runtime
+retains bounded partial receipts and reports independent case/API/cleanup failures
+together. Probe failures and observed compatibility mismatches have separate exit
+codes. Runtime summaries contain reviewed identifiers and statuses, not cell values.
 
 Only reviewed source code, build workflows and synthetic fixtures belong in this
 public checkout. Detailed observations and local working material are retained

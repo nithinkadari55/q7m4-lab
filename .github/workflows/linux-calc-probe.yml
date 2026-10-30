@@ -1,42 +1,39 @@
 name: Linux external calculation research
 on:
   workflow_dispatch:
-    inputs:
-      driver:
-        description: Conversion-only control or explicit UNO calculateAll
-        type: choice
-        options:
-          - uno
-          - cli
-        default: uno
-      engine:
-        description: Distribution baseline or checksum-pinned current TDF release
-        type: choice
-        options:
-          - distribution
-          - tdf-26.8.2
-        default: distribution
 permissions:
   contents: read
 jobs:
   synthetic-calculation:
+    name: ${{ matrix.engine }} / ${{ matrix.driver }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [distribution, tdf-26.8.2]
+        driver: [cli, uno]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
+      - name: Verify diagnostic fault controls before engine setup
+        shell: bash
+        run: |
+          /usr/bin/python3 -m unittest discover -s .github/scripts -p test_calc_probe_runtime.py -v
       - name: Install distribution engine for this disposable research job
         shell: bash
+        timeout-minutes: 4
         run: |
-          sudo apt-get update -qq > "$RUNNER_TEMP/apt-update.log" 2>&1
-          sudo apt-get install --no-install-recommends -y libreoffice-calc python3-uno > "$RUNNER_TEMP/apt-install.log" 2>&1
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update -qq > "$RUNNER_TEMP/apt-update.log" 2>&1
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install --no-install-recommends -y libreoffice-calc python3-uno > "$RUNNER_TEMP/apt-install.log" 2>&1
           dpkg-query --show --showformat='${Package} ${Version}\n' libreoffice-core libreoffice-calc python3-uno
       - name: Unpack checksum-pinned TDF build without installing it
-        if: inputs.engine == 'tdf-26.8.2'
+        if: matrix.engine == 'tdf-26.8.2'
         shell: bash
+        timeout-minutes: 5
         run: |
-          curl --fail --location --retry 2 --max-time 180 --silent --show-error \
+          curl --fail --location --retry 2 --retry-max-time 240 --max-time 180 --silent --show-error \
             --output "$RUNNER_TEMP/tdf-lo.tar.gz" \
             https://download.documentfoundation.org/libreoffice/stable/26.8.2/deb/x86_64/LibreOffice_26.8.2_Linux_x86-64_deb.tar.gz
           echo "8290c8f46cb33d6df8f681cb796e0697461ea070f86ec55b63c94d7eb9d9a476  $RUNNER_TEMP/tdf-lo.tar.gz" | sha256sum --check --status
@@ -49,8 +46,9 @@ jobs:
           echo "CALC_EXECUTABLE=$RUNNER_TEMP/tdf-root/opt/libreoffice26.8/program/soffice" >> "$GITHUB_ENV"
       - name: Compare only authored synthetic cases
         shell: bash
+        timeout-minutes: 4
         env:
-          DRIVER: ${{ inputs.driver }}
+          DRIVER: ${{ matrix.driver }}
         run: |
           /usr/bin/python3 .github/scripts/linux-calc-probe.py --driver "$DRIVER"
       # Deliberately no workbook, profile, conversion log, or results upload.
