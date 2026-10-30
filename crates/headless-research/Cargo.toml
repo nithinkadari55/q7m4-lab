@@ -16,7 +16,12 @@ path = "src/parser_portability.rs"
 name = "aspose-roundtrip-probe"
 path = "src/aspose_roundtrip.rs"
 
+[[bin]]
+name = "calamine-read-probe"
+path = "src/calamine_read_probe.rs"
+
 [dependencies]
+calamine = { version = "=0.37.0", default-features = false }
 aspose-cells-foss-rust = { git = "https://github.com/aspose-cells-foss/Aspose.Cells-FOSS-for-Rust", rev = "1a6004af47b1ef15385f9d36d381a8172428cc7e" }
 umya-spreadsheet = "=3.1.1"
 zip = { version = "=8.6.0", default-features = false, features = ["deflate"] }

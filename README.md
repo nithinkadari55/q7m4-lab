@@ -15,6 +15,9 @@ when the requested cell edit succeeds. Do not use it on business workbooks.
 The separate `aspose-roundtrip-probe` compares a pinned FOSS editor on the same
 marked fixtures. It records requested strict/repair flags without treating them
 as enforced policy, and distinguishes supplied/stale caches from calculation.
+The read-only `calamine-read-probe` keeps streaming shared-formula metadata and
+typed caches separate, then compares bounded dense APIs only after diagnostic
+geometry/formula gates. These gates are not a production hostile-upload boundary.
 
 Only reviewed source code, build workflows and synthetic fixtures belong in this
 public checkout. Detailed observations and local working material are retained
