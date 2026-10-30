@@ -9,6 +9,13 @@ on:
           - uno
           - cli
         default: uno
+      engine:
+        description: Distribution baseline or checksum-pinned current TDF release
+        type: choice
+        options:
+          - distribution
+          - tdf-26.8.2
+        default: distribution
 permissions:
   contents: read
 jobs:
@@ -25,6 +32,21 @@ jobs:
           sudo apt-get update -qq > "$RUNNER_TEMP/apt-update.log" 2>&1
           sudo apt-get install --no-install-recommends -y libreoffice-calc python3-uno > "$RUNNER_TEMP/apt-install.log" 2>&1
           dpkg-query --show --showformat='${Package} ${Version}\n' libreoffice-core libreoffice-calc python3-uno
+      - name: Unpack checksum-pinned TDF build without installing it
+        if: inputs.engine == 'tdf-26.8.2'
+        shell: bash
+        run: |
+          curl --fail --location --retry 2 --max-time 180 --silent --show-error \
+            --output "$RUNNER_TEMP/tdf-lo.tar.gz" \
+            https://download.documentfoundation.org/libreoffice/stable/26.8.2/deb/x86_64/LibreOffice_26.8.2_Linux_x86-64_deb.tar.gz
+          echo "8290c8f46cb33d6df8f681cb796e0697461ea070f86ec55b63c94d7eb9d9a476  $RUNNER_TEMP/tdf-lo.tar.gz" | sha256sum --check --status
+          mkdir "$RUNNER_TEMP/tdf-unpack" "$RUNNER_TEMP/tdf-root"
+          tar -xzf "$RUNNER_TEMP/tdf-lo.tar.gz" -C "$RUNNER_TEMP/tdf-unpack" --no-same-owner
+          shopt -s failglob
+          for package in "$RUNNER_TEMP/tdf-unpack"/*/DEBS/*.deb; do
+            dpkg-deb --extract "$package" "$RUNNER_TEMP/tdf-root"
+          done
+          echo "CALC_EXECUTABLE=$RUNNER_TEMP/tdf-root/opt/libreoffice26.8/program/soffice" >> "$GITHUB_ENV"
       - name: Compare only authored synthetic cases
         shell: bash
         env:

@@ -169,9 +169,9 @@ def uno_worker(connection, source, destination):
         desktop.terminate()
 
 
-def convert_uno(source, destination, profile):
+def convert_uno(source, destination, profile, executable):
     connection = "pipe,name=synthetic_calc_" + uuid.uuid4().hex
-    server = subprocess.Popen(["libreoffice", "-env:UserInstallation=" + profile.as_uri(),
+    server = subprocess.Popen([executable, "-env:UserInstallation=" + profile.as_uri(),
         "--headless", "--nologo", "--nodefault", "--norestore",
         "--accept=" + connection + ";urp;StarOffice.ServiceManager"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
@@ -201,7 +201,8 @@ def convert_uno(source, destination, profile):
 def run(driver):
     if os.name != "posix":
         raise RuntimeError("Linux-only process-group diagnostic")
-    version = subprocess.check_output(["libreoffice", "--version"], timeout=15, text=True).strip()
+    executable = os.environ.get("CALC_EXECUTABLE", "libreoffice")
+    version = subprocess.check_output([executable, "--version"], timeout=15, text=True).strip()
     with tempfile.TemporaryDirectory(prefix="calc-research-") as tmp:
         root = Path(tmp)
         source = generate(root / "input")
@@ -211,9 +212,9 @@ def run(driver):
         profile = root / "profile"
         result = output / source.name
         if driver == "uno":
-            convert_uno(source, result, profile)
+            convert_uno(source, result, profile, executable)
         else:
-            process = subprocess.Popen(["libreoffice", "-env:UserInstallation=" + profile.as_uri(),
+            process = subprocess.Popen([executable, "-env:UserInstallation=" + profile.as_uri(),
                 "--headless", "--nologo", "--nodefault", "--norestore", "--convert-to",
                 "xlsx:Calc MS Excel 2007 XML", "--outdir", str(output), str(source)],
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
