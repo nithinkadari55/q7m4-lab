@@ -21,6 +21,16 @@ import zipfile
 
 S = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+# Decompressed payloads of the SDK/native-qualified authored fixture. ZIP stream
+# hashes may differ with platform/zlib; workbook part bytes must still match.
+QUALIFIED_PART_SHA256 = {
+    "[Content_Types].xml": "7f57845cef1cee4cc3cb1763ff4a33e0343cf583dc921466f1959051be1ca726",
+    "_rels/.rels": "fc5715a86467973c771fed6cf49203ed48734dcbd0f24088be6bbb6e290cd7b5",
+    "xl/workbook.xml": "044b4ca8121cc96c00ff0e08a27052c4322be5158a822599a853b74055f1e40f",
+    "xl/_rels/workbook.xml.rels": "4ba410c248f448feaa0db1d20ab1026d13625101996636af24ac6d9333ca6995",
+    "xl/worksheets/sheet1.xml": "a34c5b5e3767b32550287c821205167c68bad133b19c1e86f8af0e8f5ff9eaff",
+    "xl/worksheets/sheet2.xml": "80daeb3ba8fcaf82bd5a63fcb46f3b0b9b4578e442469da85904047d8929e885",
+}
 CASES = [
     ("Inputs", "B1", "A1*2", 14, 18, "direct"),
     ("Calc", "A1", "Inputs!B1+1", 15, 19, "transitive"),
@@ -83,6 +93,10 @@ def generate(directory):
             info = zipfile.ZipInfo(name, date_time=(2020, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             archive.writestr(info, content)
+    with zipfile.ZipFile(path) as archive:
+        actual = {name: hashlib.sha256(archive.read(name)).hexdigest() for name in archive.namelist()}
+        if len(archive.infolist()) != 6 or actual != QUALIFIED_PART_SHA256:
+            raise ValueError("authored parts differ from the native-qualified corpus")
     return path
 
 
@@ -228,6 +242,7 @@ def run(driver):
         print(json.dumps({"engine": version, "driver": driver, "source_sha256": initial_hash,
                           "case_count": len(CASES), "mismatch_case_ids": mismatches, "mismatch_classes": classes,
                           "input_text_type_retained": observed.get(("Inputs", "A1")) == "9",
+                          "native_qualified_source_part_bytes": True,
                           "source_unchanged": True, "detailed_artifacts_uploaded": False}))
         if mismatches:
             raise SystemExit(1)
