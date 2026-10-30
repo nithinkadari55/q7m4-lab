@@ -19,14 +19,15 @@ use std::{
 use windows::{
     Win32::{
         Foundation::{
-            DISP_E_BADPARAMCOUNT, DISP_E_MEMBERNOTFOUND, DISP_E_NONAMEDARGS,
+            DISP_E_BADPARAMCOUNT, DISP_E_MEMBERNOTFOUND,
             DISP_E_UNKNOWNINTERFACE, DISP_E_UNKNOWNNAME, E_INVALIDARG, E_NOTIMPL, E_POINTER,
             E_UNEXPECTED, WAIT_FAILED, WAIT_TIMEOUT,
         },
         System::{
             Com::{
-                DISPATCH_FLAGS, DISPATCH_METHOD, DISPATCH_PROPERTYGET, DISPPARAMS, EXCEPINFO, IConnectionPoint,
-                IConnectionPointContainer, IDispatch, IDispatch_Impl, IDispatch_Vtbl, ITypeInfo,
+                DISPATCH_FLAGS, DISPATCH_METHOD, DISPATCH_PROPERTYGET, DISPPARAMS, EXCEPINFO,
+                IConnectionPoint, IConnectionPointContainer, IDispatch, IDispatch_Impl,
+                IDispatch_Vtbl, ITypeInfo,
             },
             Variant::VARIANT,
         },
@@ -53,6 +54,9 @@ unsafe trait ExcelAppEvents: IDispatch {}
 pub struct CallbackRecord {
     pub dispid: i32,
     pub argument_count: u32,
+    pub named_argument_count: u32,
+    pub named_ids: [i32; 4],
+    pub named_ids_truncated: bool,
     // Rust's stable opaque thread ID, not a Windows DWORD thread identifier.
     pub thread_id: ThreadId,
 }
@@ -218,7 +222,7 @@ fn known_argument_count(dispid: i32) -> Option<u32> {
 }
 
 impl ExcelSink {
-    fn record(&self, dispid: i32, argument_count: u32) -> Result<()> {
+    fn record(&self, dispid: i32, argument_count: u32, named_argument_count: u32, named_ids: [i32; 4]) -> Result<()> {
         let state = &self.observer.0;
         let thread_id = thread::current().id();
         if thread_id != state.owner_thread {
@@ -244,6 +248,9 @@ impl ExcelSink {
         queue.push_back(CallbackRecord {
             dispid,
             argument_count,
+            named_argument_count,
+            named_ids,
+            named_ids_truncated: named_argument_count > 4,
             thread_id,
         });
         increment(&state.accepted);
@@ -296,7 +303,7 @@ impl IDispatch_Impl for ExcelSink_Impl {
             if state.panic_next.replace(false) {
                 panic!("injected event-sink diagnostic panic");
             }
-            let validation = (|| -> Result<u32> {
+            let validation = (|| -> Result<(u32, u32, [i32; 4])> {
                 if riid.is_null() || params.is_null() {
                     return Err(Error::from_hresult(E_POINTER));
                 }
@@ -306,8 +313,8 @@ impl IDispatch_Impl for ExcelSink_Impl {
                     return Err(Error::from_hresult(DISP_E_UNKNOWNINTERFACE));
                 }
                 // Excel 16.0 build 18526 was observed sending METHOD|PROPERTYGET.
-                let permitted_flags = flags == DISPATCH_METHOD
-                    || flags == (DISPATCH_METHOD | DISPATCH_PROPERTYGET);
+                let permitted_flags =
+                    flags == DISPATCH_METHOD || flags == (DISPATCH_METHOD | DISPATCH_PROPERTYGET);
                 if !permitted_flags || dispid < 0 {
                     return Err(Error::from_hresult(DISP_E_MEMBERNOTFOUND));
                 }
@@ -315,8 +322,11 @@ impl IDispatch_Impl for ExcelSink_Impl {
                 if params.cArgs > MAX_CALLBACK_ARGS {
                     return Err(Error::from_hresult(DISP_E_BADPARAMCOUNT));
                 }
-                if params.cNamedArgs != 0 {
-                    return Err(Error::from_hresult(DISP_E_NONAMEDARGS));
+                if params.cNamedArgs > params.cArgs {
+                    return Err(Error::from_hresult(DISP_E_BADPARAMCOUNT));
+                }
+                if params.cNamedArgs != 0 && params.rgdispidNamedArgs.is_null() {
+                    return Err(Error::from_hresult(E_POINTER));
                 }
                 if params.cArgs != 0 && params.rgvarg.is_null() {
                     return Err(Error::from_hresult(E_POINTER));
@@ -331,9 +341,14 @@ impl IDispatch_Impl for ExcelSink_Impl {
                         increment(&state.unknown);
                     }
                 }
-                Ok(params.cArgs)
+                // Copy only bounded scalar DISPIDs. Caller storage is never retained.
+                let mut named_ids = [0; 4];
+                for (index, slot) in named_ids.iter_mut().enumerate().take(params.cNamedArgs as usize) {
+                    *slot = unsafe { *params.rgdispidNamedArgs.add(index) };
+                }
+                Ok((params.cArgs, params.cNamedArgs, named_ids))
             })();
-            let count = match validation {
+            let (count, named_count, named_ids) = match validation {
                 Ok(count) => count,
                 Err(error) => {
                     increment(&state.malformed);
@@ -345,7 +360,7 @@ impl IDispatch_Impl for ExcelSink_Impl {
                 // COM [out] storage is not an existing owned value to clear.
                 unsafe { result.write(VARIANT::default()) };
             }
-            self.record(dispid, count)
+            self.record(dispid, count, named_count, named_ids)
         });
         if let Err(error) = &outcome {
             state.last_callback_error.set(Some(error.code()));
@@ -581,6 +596,34 @@ mod tests {
         assert_eq!(observer.stats().malformed, 1);
     }
 
+
+    #[test]
+    fn named_event_argument_ids_are_copied_and_missing_storage_is_rejected() {
+        let (_sink, dispatch, observer) = new_sink(4);
+        let mut args = [VARIANT::default(), VARIANT::default()];
+        let mut ids = [1, 0];
+        let params = DISPPARAMS {
+            rgvarg: args.as_mut_ptr(),
+            rgdispidNamedArgs: ids.as_mut_ptr(),
+            cArgs: 2,
+            cNamedArgs: 2,
+        };
+        unsafe {
+            dispatch.Invoke(SHEET_CHANGE, &GUID::zeroed(), 0,
+                DISPATCH_METHOD | DISPATCH_PROPERTYGET, &params, None, None, None)
+        }.expect("named callback");
+        ids.fill(999);
+        let records = observer.take_records().unwrap();
+        assert_eq!(records[0].named_argument_count, 2);
+        assert_eq!(records[0].named_ids, [1, 0, 0, 0]);
+        assert!(!records[0].named_ids_truncated);
+        let missing = DISPPARAMS { rgdispidNamedArgs: std::ptr::null_mut(), ..params };
+        assert_code(unsafe {
+            dispatch.Invoke(SHEET_CHANGE, &GUID::zeroed(), 0, DISPATCH_METHOD,
+                &missing, None, None, None)
+        }, E_POINTER);
+    }
+
     #[test]
     fn callbacks_are_owned_bounded_records_and_unknown_is_observed() {
         let (_sink, dispatch, observer) = new_sink(4);
@@ -675,7 +718,7 @@ mod tests {
                     None,
                 )
             },
-            DISP_E_NONAMEDARGS,
+            DISP_E_BADPARAMCOUNT,
         );
         assert!(observer.take_records().expect("drain").is_empty());
         assert_eq!(observer.stats().malformed, 7);

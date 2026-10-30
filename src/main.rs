@@ -451,7 +451,7 @@ fn native_event_checks(
     let stats = observer.stats();
     let same_thread = first.iter().all(|r| r.thread_id == stats.owner_thread);
     let change_seen = first.iter().any(|r| r.dispid == SHEET_CHANGE);
-    let records: Vec<Value> = first.iter().map(|r|json!({"dispid":r.dispid,"argument_count":r.argument_count,"thread":format!("{:?}",r.thread_id)})).collect();
+    let records: Vec<Value> = first.iter().map(|r|json!({"dispid":r.dispid,"argument_count":r.argument_count,"named_argument_count":r.named_argument_count,"named_ids":&r.named_ids[..(r.named_argument_count.min(4) as usize)],"named_ids_truncated":r.named_ids_truncated,"thread":format!("{:?}",r.thread_id)})).collect();
     check(
         report,
         "native_sta_event_delivery",
