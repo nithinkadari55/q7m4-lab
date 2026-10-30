@@ -1,5 +1,7 @@
 //! Disposable COM diagnostics. Never attaches to an existing workbook or instance.
 //! Raw VARIANTs are deliberately wrapped: generated bindings do not own their payloads.
+mod event_sink;
+
 use serde_json::{Value, json};
 use std::{mem::ManuallyDrop, ptr};
 use windows::{
@@ -223,12 +225,13 @@ fn invoke(
     }
     let error = result.err().map(|e| {
         format!(
-            "{name} HRESULT={:08x} scode={:08x} reversed_arg={} source={} description={}",
+            "{name} HRESULT={:08x} scode={:08x} reversed_arg={} source={} description={} binding_message={}",
             e.code().0,
             ex.scode,
             arg_error,
             *ex.bstrSource,
-            *ex.bstrDescription
+            *ex.bstrDescription,
+            e.message()
         )
     });
     unsafe {
@@ -385,10 +388,8 @@ fn excel_checks(owner: &mut OwnedExcel, report: &mut Vec<Value>) -> ProbeResult<
     .unwrap_or_default();
     check(
         report,
-        "excel_exception_details",
-        bad_range.contains("HRESULT=")
-            && bad_range.contains("description=")
-            && !bad_range.ends_with("description="),
+        "excel_exception_hresult_and_scode",
+        bad_range.contains("HRESULT=80020009") && bad_range.contains("scode=800a03ec"),
         json!({"error":bad_range}),
     )?;
     let missing_member = get(app, "ThisMemberDoesNotExist_Probe")
@@ -411,7 +412,65 @@ fn excel_checks(owner: &mut OwnedExcel, report: &mut Vec<Value>) -> ProbeResult<
         true,
         json!({"iterations":200,"leak_proof":false}),
     )?;
-    Ok(json!({"pid":pid,"environment":environment}))
+    let events = native_event_checks(app, &sheet, report)?;
+    Ok(json!({"pid":pid,"environment":environment,"events":events}))
+}
+
+
+fn native_event_checks(app: &IDispatch, sheet: &IDispatch, report: &mut Vec<Value>) -> ProbeResult<Value> {
+    use event_sink::{EventSubscription, SHEET_CHANGE, pump_for};
+    use std::time::Duration;
+    let target = invoke(sheet, "Range", DISPATCH_PROPERTYGET, vec![OwnedVariant::text("A10")])?.dispatch()?;
+    let formula = invoke(sheet, "Range", DISPATCH_PROPERTYGET, vec![OwnedVariant::text("D10")])?.dispatch()?;
+    put(&target, "Value2", OwnedVariant::number(1.0))?;
+    put(&formula, "Formula2", OwnedVariant::text("=A10*2"))?;
+    put(app, "EnableEvents", OwnedVariant::boolean(true))?;
+    let mut subscription = EventSubscription::subscribe(app, 8).map_err(|e|format!("Advise: {e}"))?;
+    let observer = subscription.observer();
+    put(&target, "Value2", OwnedVariant::number(2.0))?;
+    invoke(app, "CalculateFull", DISPATCH_METHOD, vec![])?;
+    let pump = pump_for(Duration::from_millis(150), 2000).map_err(|e|e.to_string())?;
+    let first = observer.take_records().map_err(|e|e.to_string())?;
+    let stats = observer.stats();
+    let same_thread = first.iter().all(|r|r.thread_id == stats.owner_thread);
+    let change_seen = first.iter().any(|r|r.dispid == SHEET_CHANGE);
+    let records: Vec<Value> = first.iter().map(|r|json!({"dispid":r.dispid,"argument_count":r.argument_count,"thread":format!("{:?}",r.thread_id)})).collect();
+    check(report, "native_sta_event_delivery", change_seen && same_thread && !stats.faulted && stats.dropped == 0,
+        json!({"records":records,"owner_thread":format!("{:?}",stats.owner_thread),"pump_messages":pump.dispatched_messages,"quit_seen":pump.quit_seen,"pump_limit":pump.message_limit_reached}))?;
+    let current = get(&formula, "Value2")?.scalar()?;
+    check(report, "event_followup_fresh_value", current["value"] == 4.0, current)?;
+    observer.mark_reconciled();
+    let before = observer.stats().accepted;
+    put(app, "EnableEvents", OwnedVariant::boolean(false))?;
+    observer.mark_gap();
+    put(&target, "Value2", OwnedVariant::number(3.0))?;
+    invoke(app, "CalculateFull", DISPATCH_METHOD, vec![])?;
+    pump_for(Duration::from_millis(100), 2000).map_err(|e|e.to_string())?;
+    put(app, "EnableEvents", OwnedVariant::boolean(true))?;
+    let suppressed = observer.stats();
+    let current = get(&formula, "Value2")?.scalar()?;
+    check(report, "native_suppressed_event_gap", suppressed.accepted == before && suppressed.dirty && current["value"] == 6.0,
+        json!({"accepted_before":before,"accepted_after":suppressed.accepted,"dirty":suppressed.dirty,"reconciled_value":current}))?;
+    observer.mark_reconciled();
+    observer.take_records().map_err(|e|e.to_string())?;
+    for n in 10..30 { put(&target, "Value2", OwnedVariant::number(n as f64))?; }
+    pump_for(Duration::from_millis(100), 2000).map_err(|e|e.to_string())?;
+    let overflow = observer.stats();
+    let queued = observer.take_records().map_err(|e|e.to_string())?;
+    check(report, "native_event_overflow_invalidates", overflow.dropped > 0 && overflow.dirty && queued.len() <= 8,
+        json!({"dropped":overflow.dropped,"dirty":overflow.dirty,"queued":queued.len(),"capacity":8}))?;
+    let current = get(&formula, "Value2")?.scalar()?;
+    check(report, "overflow_reconciliation", current["value"] == 58.0, current)?;
+    observer.mark_reconciled();
+    subscription.detach().map_err(|e|format!("Unadvise: {e}"))?;
+    let detached = observer.stats();
+    put(&target, "Value2", OwnedVariant::number(40.0))?;
+    pump_for(Duration::from_millis(100), 2000).map_err(|e|e.to_string())?;
+    let after = observer.stats();
+    check(report, "native_unadvise_and_sink_release", detached.sink_dropped && after.accepted == detached.accepted && after.last_detach_error.is_none(),
+        json!({"sink_dropped":after.sink_dropped,"accepted_at_detach":detached.accepted,"accepted_after_mutation":after.accepted}))?;
+    drop(subscription);
+    Ok(json!({"callback_records":records,"overflow_dropped":overflow.dropped,"same_thread":same_thread,"idle_other_actor_proven":false}))
 }
 
 fn main() {
@@ -451,7 +510,7 @@ fn main() {
     let passed = outcome.is_ok() && cleanup["owned_excel_quit"] == true;
     println!(
         "{}",
-        json!({"passed":passed,"checks":checks,"environment":outcome.as_ref().ok(),"error":outcome.as_ref().err(),"cleanup":cleanup,"limitations":["owned synthetic instance only","no event sink or busy/rejected-call proof yet","no production readiness claim"]})
+        json!({"passed":passed,"checks":checks,"environment":outcome.as_ref().ok(),"error":outcome.as_ref().err(),"cleanup":cleanup,"limitations":["owned synthetic instance only","no second-apartment idle-pump or busy/rejected-call proof yet","no production readiness claim"]})
     );
     if !passed {
         std::process::exit(1);
@@ -476,7 +535,12 @@ mod tests {
         assert!(array.array_put(4, 7, &OwnedVariant::number(1.0)).is_err());
         let actual = array.array_snapshot().expect("snapshot");
         assert_eq!(actual["bounds"], json!([[5, 6], [7, 9]]));
-        let cells: Vec<_> = actual["cells"].as_array().unwrap().iter().map(|v|v["value"].as_str().unwrap()).collect();
+        let cells: Vec<_> = actual["cells"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v["value"].as_str().unwrap())
+            .collect();
         assert_eq!(cells, ["5:7", "5:8", "5:9", "6:7", "6:8", "6:9"]);
     }
 

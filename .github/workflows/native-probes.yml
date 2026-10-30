@@ -82,6 +82,7 @@ jobs:
           name: bootstrap-source
           path: |
             src/main.rs
+            src/event_sink.rs
             Cargo.lock
           if-no-files-found: error
           retention-days: 7
