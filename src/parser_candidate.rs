@@ -115,12 +115,28 @@ fn reference_json(reference: RefView<'_>) -> Value {
     }
 }
 
+// Only recognized Excel compatibility prefixes are removed, for classification
+// alone. Preserve the original AST and reported raw names; do not strip arbitrary
+// namespaces such as Custom.LET or MyAddin.INDIRECT.
+fn classification_name(mut name: &str) -> &str {
+    while let Some((prefix, tail)) = name.split_once('.') {
+        if prefix.eq_ignore_ascii_case("_xlfn") || prefix.eq_ignore_ascii_case("_xlws") {
+            name = tail;
+        } else {
+            break;
+        }
+    }
+    name
+}
+
 fn summarize(ast: &ASTNode, limits: ParserLimits) -> Value {
     let mut nodes = 0usize;
     let mut max_height = 0usize;
     let mut calls = 0usize;
     let mut functions = BTreeSet::new();
     let mut functions_truncated = false;
+    let mut has_lexical_construct = false;
+    let mut has_dynamic_function = false;
     let mut stack = vec![(ast, 1usize)];
     while let Some((node, height)) = stack.pop() {
         nodes = nodes.saturating_add(1);
@@ -135,6 +151,13 @@ fn summarize(ast: &ASTNode, limits: ParserLimits) -> Value {
                 stack.push((left, height + 1));
             }
             ASTNodeType::Function { name, args } => {
+                // Classification must inspect every admitted AST node even when
+                // the independently capped raw function-name output is full.
+                let builtin = classification_name(name);
+                has_lexical_construct |= builtin.eq_ignore_ascii_case("LET")
+                    || builtin.eq_ignore_ascii_case("LAMBDA");
+                has_dynamic_function |= builtin.eq_ignore_ascii_case("INDIRECT")
+                    || builtin.eq_ignore_ascii_case("OFFSET");
                 if functions.len() < MAX_FUNCTION_OUTPUT || functions.contains(name) {
                     functions.insert(name.clone());
                 } else {
@@ -171,12 +194,6 @@ fn summarize(ast: &ASTNode, limits: ParserLimits) -> Value {
     } else {
         (None, None)
     };
-    let has_lexical_construct = functions.iter().any(|name| {
-        name.eq_ignore_ascii_case("LET") || name.eq_ignore_ascii_case("LAMBDA")
-    });
-    let has_dynamic_function = functions.iter().any(|name| {
-        name.eq_ignore_ascii_case("INDIRECT") || name.eq_ignore_ascii_case("OFFSET")
-    });
     json!({
         "status":"parsed_unresolved", "nodes":nodes, "ast_height":max_height,
         "function_names":functions, "function_names_truncated":functions_truncated,
@@ -189,6 +206,8 @@ fn summarize(ast: &ASTNode, limits: ParserLimits) -> Value {
         "collect_excluding_names_count":excluding_names,
         "lexical_binding_resolution_required":has_lexical_construct,
         "potential_dynamic_reference_function":has_dynamic_function,
+        "ast_classification_scan_complete":true,
+        "function_classification_scope":"known syntactic builtin candidates, not UDF or workbook-name resolution",
         "semantic_resolution_performed":false,
         "dependency_graph_complete":false,
         "volatility_classification":"not_supplied; contains_volatile is not a completeness result",
@@ -406,13 +425,62 @@ mod tests {
 
     #[test]
     fn source_bytes_are_utf8_and_zero_budgets_are_not_silently_raised() {
-        let one_node = ParserLimits::default().with_source_bytes(2).with_tokens(1)
+        let one_node = ParserLimits::default().with_source_bytes(3).with_tokens(1)
             .with_ast_nodes(1).with_pratt_frames(1).with_ast_height(1);
-        let at = inspect_with_limits("\u{00e9}", InputSyntax::ExcelA1, one_node);
+        let at = inspect_with_limits("=\u{00e9}", InputSyntax::ExcelA1, one_node);
         assert!(expectation_holds(&at, &Expected::Parsed(&["name"])));
-        let above = inspect_with_limits("\u{00e9}", InputSyntax::ExcelA1, one_node.with_source_bytes(1));
+        let above = inspect_with_limits("=\u{00e9}", InputSyntax::ExcelA1, one_node.with_source_bytes(2));
         assert!(expectation_holds(&above, &Expected::Rejected("source_budget")));
         let zero = inspect_with_limits("=1", InputSyntax::ExcelA1, diagnostic_limits().with_ast_nodes(0));
         assert!(expectation_holds(&zero, &Expected::Rejected("ast_node_budget")));
+    }
+
+    #[test]
+    fn truncated_function_names_do_not_truncate_classification() {
+        let filler = (0..MAX_FUNCTION_OUTPUT + 1)
+            .map(|index| format!("CandidateFn{index}()"))
+            .collect::<Vec<_>>().join(",");
+        for (tail, lexical, dynamic) in [
+            ("INDIRECT(\"A1\")", false, true),
+            ("OFFSET(A1,1,0)", false, true),
+            ("LET(x,A1,x)", true, false),
+            ("LAMBDA(x,x)(A1)", true, false),
+        ] {
+            let formula = format!("=SUM({filler},{tail})");
+            let value = inspect_formula(&formula, InputSyntax::ExcelA1);
+            assert_eq!(value.get("status").and_then(Value::as_str), Some("parsed_unresolved"), "{value}");
+            assert_eq!(value.get("function_names_truncated").and_then(Value::as_bool), Some(true));
+            assert_eq!(value.get("function_names").and_then(Value::as_array).map(Vec::len), Some(MAX_FUNCTION_OUTPUT));
+            assert_eq!(value.get("lexical_binding_resolution_required").and_then(Value::as_bool), Some(lexical), "{value}");
+            assert_eq!(value.get("potential_dynamic_reference_function").and_then(Value::as_bool), Some(dynamic), "{value}");
+            assert_eq!(value.get("ast_classification_scan_complete").and_then(Value::as_bool), Some(true));
+        }
+    }
+
+    #[test]
+    fn compatibility_prefixes_classify_without_rewriting_raw_names() {
+        for (formula, raw_name, lexical, dynamic) in [
+            ("=_xlfn.LET(x,A1,x)", "_xlfn.LET", true, false),
+            ("=_xlfn.LAMBDA(x,x)(A1)", "_xlfn.LAMBDA", true, false),
+            ("=_xlws.INDIRECT(\"A1\")", "_xlws.INDIRECT", false, true),
+            ("=_xlfn._xlws.OFFSET(A1,1,0)", "_xlfn._xlws.OFFSET", false, true),
+            ("=_XLFN._XLWS.LET(x,A1,x)", "_XLFN._XLWS.LET", true, false),
+            ("=Custom.LET(A1)", "Custom.LET", false, false),
+            ("=MyAddin.INDIRECT(A1)", "MyAddin.INDIRECT", false, false),
+        ] {
+            let value = inspect_formula(formula, InputSyntax::ExcelA1);
+            assert_eq!(value.get("status").and_then(Value::as_str), Some("parsed_unresolved"), "{value}");
+            let names = value.get("function_names").and_then(Value::as_array).expect("raw names");
+            assert!(names.iter().any(|name| name.as_str() == Some(raw_name)), "{value}");
+            assert_eq!(value.get("lexical_binding_resolution_required").and_then(Value::as_bool), Some(lexical), "{value}");
+            assert_eq!(value.get("potential_dynamic_reference_function").and_then(Value::as_bool), Some(dynamic), "{value}");
+        }
+    }
+
+    #[test]
+    fn bare_unicode_text_is_a_literal_not_a_named_formula_reference() {
+        let value = inspect_formula("\u{00e9}", InputSyntax::ExcelA1);
+        assert_eq!(value.get("status").and_then(Value::as_str), Some("parsed_unresolved"));
+        assert_eq!(value.get("references_total").and_then(Value::as_u64), Some(0));
     }
 }

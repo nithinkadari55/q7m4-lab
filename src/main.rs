@@ -256,7 +256,9 @@ fn put(object: &IDispatch, name: &str, value: OwnedVariant) -> ProbeResult<()> {
     invoke(object, name, DISPATCH_PROPERTYPUT, vec![value]).map(drop)
 }
 fn check(report: &mut Vec<Value>, name: &str, pass: bool, detail: Value) -> ProbeResult<()> {
-    report.push(json!({"name":name,"pass":pass,"detail":detail}));
+    let observation = json!({"name":name,"pass":pass,"detail":detail});
+    eprintln!("{observation}");
+    report.push(observation);
     if pass {
         Ok(())
     } else {
