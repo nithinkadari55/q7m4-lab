@@ -1,5 +1,5 @@
 //! Parser-only native Rust diagnostic for a reviewed synthetic formula corpus.
-//! Source/API reviewed, not yet compiled or executed in this investigation.
+//! Windows Rust corpus previously executed; portable-host validation is separate.
 //! Dependencies: formualizer-parse = "=4.1.0", default-features=false;
 //! formualizer-common = "=4.1.0", default-features=false (transitive pin);
 //! serde_json = "=1.0.145". No evaluator, workbook engine or default facade.
@@ -274,7 +274,7 @@ fn inspect_with_limits(formula: &str, syntax: InputSyntax, limits: ParserLimits)
         return json!({
             "status":"host_unsupported_dialect", "parser_called":false,
             "reason":"candidate has Excel A1/OpenFormula dialects, no R1C1 mode",
-            "next_step":"normalize using native Excel at a known origin, or choose a verified R1C1 parser",
+            "next_step":"use a verified portable R1C1 parser/normalizer at a known origin; native Excel is an optional compatibility oracle",
         });
     }
     match catch_unwind(AssertUnwindSafe(|| {

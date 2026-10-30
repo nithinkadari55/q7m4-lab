@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
+[workspace]
+members = ["crates/headless-research"]
+default-members = ["."]
+resolver = "3"
+
 [features]
 parser-candidate = ["dep:formualizer-parse", "dep:formualizer-common"]
 

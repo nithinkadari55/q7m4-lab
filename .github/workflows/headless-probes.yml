@@ -1,0 +1,86 @@
+name: Headless Rust research probes
+on:
+  workflow_dispatch:
+    inputs:
+      refresh_lock:
+        description: Resolve reviewed new diagnostic dependencies
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Resolve one shared lockfile
+        shell: bash
+        env:
+          REFRESH_LOCK: ${{ inputs.refresh_lock }}
+        run: |
+          rustup show
+          if [ "$REFRESH_LOCK" = true ]; then
+            cargo metadata --all-features --format-version 1 > /dev/null
+          else
+            cargo metadata --all-features --locked --format-version 1 > /dev/null
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: shared-research-lock
+          path: Cargo.lock
+          if-no-files-found: error
+          retention-days: 7
+  portable:
+    needs: resolve
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: shared-research-lock
+      - name: Compile and run headless diagnostics
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          rustup show
+          cargo fmt --all
+          cargo metadata --all-features --locked --format-version 1 > dependencies.json
+          cargo test -p headless-research --locked --target "$TARGET"
+          cargo clippy -p headless-research --locked --all-targets --target "$TARGET" -- -D warnings
+          cargo build -p headless-research --locked --release --target "$TARGET"
+          extension=""
+          if [ "$TARGET" = x86_64-pc-windows-msvc ]; then extension=".exe"; fi
+          "target/$TARGET/release/parser-portability-probe$extension" > parser-report.json
+          python .github/scripts/package-research.py "$TARGET"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: headless-probes-${{ matrix.target }}
+          path: artifact/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Retain formatted diagnostic source for bootstrap review
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: headless-bootstrap-${{ matrix.target }}
+          path: |
+            crates/headless-research/src/
+            src/parser_candidate.rs
+            Cargo.lock
+          if-no-files-found: error
+          retention-days: 7

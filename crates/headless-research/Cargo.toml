@@ -1,0 +1,21 @@
+[package]
+name = "headless-research"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "umya-roundtrip-probe"
+path = "src/umya_roundtrip.rs"
+
+[[bin]]
+name = "parser-portability-probe"
+path = "src/parser_portability.rs"
+
+[dependencies]
+umya-spreadsheet = "=3.1.1"
+zip = { version = "=8.6.0", default-features = false, features = ["deflate"] }
+sha2 = "=0.11.0"
+serde_json = "=1.0.145"
+formualizer-parse = { version = "=4.1.0", default-features = false }
+formualizer-common = { version = "=4.1.0", default-features = false }
