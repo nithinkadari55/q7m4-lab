@@ -1,5 +1,5 @@
 //! Reviewed synthetic-fixture diagnostic, independent of Excel/Windows.
-//! Source/API reviewed; not yet compiled or executed as Rust in this research.
+//! Compile/runtime evidence is separate from accepting an engine's feature fidelity.
 //! Reads input immutably, edits one explicit typed-string cell, creates a new
 //! output only, inventories package changes, and rereads the candidate artifact.
 //! Source size/ZIP admission caps are diagnostic bounds, not total RSS guarantees.

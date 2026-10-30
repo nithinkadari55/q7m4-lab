@@ -1,4 +1,4 @@
-//! Pinned Aspose FOSS synthetic-fixture diagnostic; source reviewed, not built yet.
+//! Pinned Aspose FOSS synthetic-fixture diagnostic; feature acceptance is separate.
 //! No Office/Windows, external refresh, formula evaluation or macro execution.
 mod aspose_guard;
 
@@ -12,9 +12,13 @@ fn snapshot(sheet: &Worksheet, position: (u32, u32)) -> Value {
     // zero-based (row,column). Keep the conversion explicit.
     let (column, row) = position;
     match sheet.get_cell_value(row - 1, column - 1) {
-        Some(CellValue::String(text)) => json!({"present":true,"kind":"string","value":text,"formula":""}),
-        Some(CellValue::Formula(formula)) => json!({"present":true,"kind":"formula","formula":formula,
-            "cache_debug":format!("{:?}",sheet.get_formula_cached_value(row - 1,column - 1))}),
+        Some(CellValue::String(text)) => {
+            json!({"present":true,"kind":"string","value":text,"formula":""})
+        }
+        Some(CellValue::Formula(formula)) => {
+            json!({"present":true,"kind":"formula","formula":formula,
+            "cache_debug":format!("{:?}",sheet.get_formula_cached_value(row - 1,column - 1))})
+        }
         Some(value) => json!({"present":true,"kind":"other","value_debug":format!("{value:?}")}),
         None => json!({"present":false}),
     }
@@ -31,10 +35,19 @@ fn load(source: &[u8], strict_requested: bool) -> ProbeResult<Workbook> {
         try_repair_xml: !strict_requested,
         preserve_unsupported_parts: true,
     };
-    Ok(Workbook::load_xlsx_from_bytes_with_options(source, &options)?)
+    Ok(Workbook::load_xlsx_from_bytes_with_options(
+        source, &options,
+    )?)
 }
 
-fn run(input: &Path, output: &Path, sheet_name: &str, cell: &str, new_text: &str, strict: bool) -> ProbeResult<Value> {
+fn run(
+    input: &Path,
+    output: &Path,
+    sheet_name: &str,
+    cell: &str,
+    new_text: &str,
+    strict: bool,
+) -> ProbeResult<Value> {
     if new_text.len() > 1024 {
         return Err(invalid("replacement text cap exceeded"));
     }
@@ -58,7 +71,10 @@ fn run(input: &Path, output: &Path, sheet_name: &str, cell: &str, new_text: &str
     let after_edit = snapshot(book.worksheet(sheet_name)?, position);
     // File implements Write+Seek; exclusive creation protects existing input,
     // candidate, hard-link and symlink paths. Do not use the overwriting path API.
-    let mut destination = OpenOptions::new().write(true).create_new(true).open(&output)?;
+    let mut destination = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&output)?;
     book.save_xlsx_to_stream(&mut destination)?;
     destination.flush()?;
     destination.sync_all()?;
@@ -70,18 +86,35 @@ fn run(input: &Path, output: &Path, sheet_name: &str, cell: &str, new_text: &str
     let edit_matches = roundtrip.get("kind").and_then(Value::as_str) == Some("string")
         && roundtrip.get("value").and_then(Value::as_str) == Some(new_text);
     let original_unchanged = read_bounded(input, INPUT_CAP)? == source;
-    let removed: Vec<&String> = input_parts.keys().filter(|name| !output_parts.contains_key(*name)).collect();
-    let added: Vec<&String> = output_parts.keys().filter(|name| !input_parts.contains_key(*name)).collect();
-    let changed: Vec<&String> = input_parts.iter().filter_map(|(name, before)|
-        output_parts.get(name).filter(|after| *after != before).map(|_| name)).collect();
-    let opaque_checks: Vec<Value> = OPAQUE_PARTS.iter().map(|name| {
-        let before = input_parts.get(*name);
-        let after = output_parts.get(*name);
-        json!({"part":name,"present_before":before.is_some(),"present_after":after.is_some(),
+    let removed: Vec<&String> = input_parts
+        .keys()
+        .filter(|name| !output_parts.contains_key(*name))
+        .collect();
+    let added: Vec<&String> = output_parts
+        .keys()
+        .filter(|name| !input_parts.contains_key(*name))
+        .collect();
+    let changed: Vec<&String> = input_parts
+        .iter()
+        .filter_map(|(name, before)| {
+            output_parts
+                .get(name)
+                .filter(|after| *after != before)
+                .map(|_| name)
+        })
+        .collect();
+    let opaque_checks: Vec<Value> = OPAQUE_PARTS
+        .iter()
+        .map(|name| {
+            let before = input_parts.get(*name);
+            let after = output_parts.get(*name);
+            json!({"part":name,"present_before":before.is_some(),"present_after":after.is_some(),
                "bytes_preserved":before.is_some() && before == after})
-    }).collect();
-    let opaque_pass = opaque_checks.iter().all(|check|
-        check.get("bytes_preserved").and_then(Value::as_bool) == Some(true));
+        })
+        .collect();
+    let opaque_pass = opaque_checks
+        .iter()
+        .all(|check| check.get("bytes_preserved").and_then(Value::as_bool) == Some(true));
     Ok(json!({
         "engine":"Aspose.Cells FOSS Rust","expected_version":"26.7.0",
         "expected_source_commit":"1a6004af47b1ef15385f9d36d381a8172428cc7e",
@@ -108,21 +141,41 @@ fn run(input: &Path, output: &Path, sheet_name: &str, cell: &str, new_text: &str
 
 fn main() {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
-    if arguments.len() != 6 || !matches!(arguments.last().map(String::as_str), Some("default" | "strict")) {
-        eprintln!("usage: aspose-roundtrip-probe INPUT.xlsx NEW_OUTPUT.xlsx SHEET CELL TEXT default|strict");
+    if arguments.len() != 6
+        || !matches!(
+            arguments.last().map(String::as_str),
+            Some("default" | "strict")
+        )
+    {
+        eprintln!(
+            "usage: aspose-roundtrip-probe INPUT.xlsx NEW_OUTPUT.xlsx SHEET CELL TEXT default|strict"
+        );
         std::process::exit(2);
     }
-    let result = run(Path::new(&arguments[0]),Path::new(&arguments[1]),&arguments[2],&arguments[3],
-                     &arguments[4],arguments[5] == "strict");
+    let result = run(
+        Path::new(&arguments[0]),
+        Path::new(&arguments[1]),
+        &arguments[2],
+        &arguments[3],
+        &arguments[4],
+        arguments[5] == "strict",
+    );
     match result {
         Ok(report) => {
             println!("{report:#}");
-            if report.get("candidate_passed_this_fixture").and_then(Value::as_bool) != Some(true) {
+            if report
+                .get("candidate_passed_this_fixture")
+                .and_then(Value::as_bool)
+                != Some(true)
+            {
                 std::process::exit(1);
             }
-        },
+        }
         Err(error) => {
-            println!("{}",json!({"probe_error":error.to_string(),"candidate_passed_this_fixture":false}));
+            println!(
+                "{}",
+                json!({"probe_error":error.to_string(),"candidate_passed_this_fixture":false})
+            );
             std::process::exit(1);
         }
     }
@@ -144,9 +197,18 @@ mod tests {
         let bytes = book.save_xlsx_to_bytes().expect("headless write");
         let read = load(&bytes, true).expect("headless read");
         let sheet = read.worksheet("Sheet1").expect("default sheet");
-        assert_eq!(sheet.get_cell_value(0, 0), Some(&CellValue::String("=SUM(1,2)".into())));
-        assert_eq!(sheet.get_cell_value(0, 1), Some(&CellValue::Formula("SUM(1,2)".into())));
-        assert_eq!(sheet.get_formula_cached_value(0, 1), Some(&CellValue::Number(3.0)));
+        assert_eq!(
+            sheet.get_cell_value(0, 0),
+            Some(&CellValue::String("=SUM(1,2)".into()))
+        );
+        assert_eq!(
+            sheet.get_cell_value(0, 1),
+            Some(&CellValue::Formula("SUM(1,2)".into()))
+        );
+        assert_eq!(
+            sheet.get_formula_cached_value(0, 1),
+            Some(&CellValue::Number(3.0))
+        );
         // We supplied 3.0. This is no claim that the library calculated it.
     }
 
@@ -164,7 +226,10 @@ mod tests {
         let read = load(&bytes, true).expect("read stale-cache case");
         let sheet = read.worksheet("Sheet1").expect("default sheet");
         assert_eq!(sheet.get_cell_value(0, 0), Some(&CellValue::Number(9.0)));
-        assert_eq!(sheet.get_formula_cached_value(0, 1), Some(&CellValue::Number(14.0)));
+        assert_eq!(
+            sheet.get_formula_cached_value(0, 1),
+            Some(&CellValue::Number(14.0))
+        );
         // Excel's mathematical result would be 18. The expected 14 records the
         // candidate's stale-cache boundary; callers must not mark this fresh.
     }
