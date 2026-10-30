@@ -161,8 +161,19 @@ def uno_worker(connection, source, destination):
             raise RuntimeError("synthetic document load returned no component")
         document.enableAutomaticCalculation(False)
         document.calculateAll()
+        memory_mismatches = []
+        for sheet, address, _, old_cache, expected, identifier in CASES:
+            cell = document.getSheets().getByName(sheet).getCellRangeByName(address)
+            if cell.getError():
+                memory_mismatches.append({"case_id": identifier, "classification": "calculated_cell_error"})
+            else:
+                actual = cell.getString() if isinstance(expected, str) else cell.getValue()
+                match = actual == expected if isinstance(expected, str) else math.isclose(actual, expected, rel_tol=0, abs_tol=1e-10)
+                if not match:
+                    memory_mismatches.append({"case_id": identifier, "classification": "retained_source_cache" if actual == old_cache else "nonmatching_result"})
         document.storeAsURL(Path(destination).as_uri(), (
             prop("FilterName", "Calc MS Excel 2007 XML"), prop("Overwrite", False)))
+        print(json.dumps({"in_memory_cases": len(CASES), "in_memory_mismatches": memory_mismatches}))
     finally:
         if document is not None:
             document.close(True)
@@ -187,10 +198,14 @@ def convert_uno(source, destination, profile, executable):
         if bridge.returncode:
             # Synthetic code traceback only; no workbook values or UNO dump.
             raise RuntimeError("owned UNO calculation bridge failed")
+        memory = json.loads(stdout)
+        if memory.get("in_memory_cases") != len(CASES):
+            raise RuntimeError("incomplete in-memory calculation observation")
         try:
             server.wait(timeout=10)
         except subprocess.TimeoutExpired:
             raise RuntimeError("owned UNO server did not exit after terminate") from None
+        return memory
     finally:
         for owned in (bridge, server):
             if owned is not None and owned.poll() is None:
@@ -211,8 +226,9 @@ def run(driver):
         output.mkdir()
         profile = root / "profile"
         result = output / source.name
+        memory = None
         if driver == "uno":
-            convert_uno(source, result, profile, executable)
+            memory = convert_uno(source, result, profile, executable)
         else:
             process = subprocess.Popen([executable, "-env:UserInstallation=" + profile.as_uri(),
                 "--headless", "--nologo", "--nodefault", "--norestore", "--convert-to",
@@ -242,10 +258,11 @@ def run(driver):
         # Emit reviewed case identifiers only, never detailed workbook results.
         print(json.dumps({"engine": version, "driver": driver, "source_sha256": initial_hash,
                           "case_count": len(CASES), "mismatch_case_ids": mismatches, "mismatch_classes": classes,
+                          "calculated_in_memory": memory,
                           "input_text_type_retained": observed.get(("Inputs", "A1")) == "9",
                           "native_qualified_source_part_bytes": True,
                           "source_unchanged": True, "detailed_artifacts_uploaded": False}))
-        if mismatches:
+        if mismatches or (memory is not None and memory["in_memory_mismatches"]):
             raise SystemExit(1)
 
 
