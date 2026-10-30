@@ -446,7 +446,7 @@ pub fn pump_for(budget: Duration, max_messages: usize) -> Result<PumpReport> {
 mod tests {
     use super::*;
     use windows::{
-        Win32::System::Com::{IConnectionPoint_Impl, IConnectionPoint_Vtbl, IEnumConnections},
+        Win32::System::Com::{IConnectionPoint_Impl, IEnumConnections},
         core::Ref,
     };
 
