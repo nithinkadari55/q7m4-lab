@@ -20,8 +20,10 @@ jobs:
       - name: Resolve dependencies
         shell: pwsh
         run: |
-          if (!(Test-Path Cargo.lock)) { cargo generate-lockfile }
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (!(Test-Path Cargo.lock)) {
+            cargo generate-lockfile
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
           cargo metadata --locked --format-version 1 > dependencies.json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Check and build diagnostic
@@ -42,6 +44,18 @@ jobs:
           Copy-Item target/x86_64-pc-windows-msvc/release/native-research-probes.exe artifact/
           Copy-Item Cargo.lock artifact/
           Copy-Item dependencies.json artifact/
+          $packages = (Get-Content dependencies.json -Raw | ConvertFrom-Json).packages
+          $licenseIndex = @()
+          foreach ($package in $packages) {
+            if (!$package.source) { continue }
+            $directory = Split-Path $package.manifest_path
+            $destination = Join-Path artifact/licenses "$($package.name)-$($package.version)"
+            New-Item -ItemType Directory -Path $destination -Force | Out-Null
+            $notices = Get-ChildItem -LiteralPath $directory -File | Where-Object { $_.Name -match '^(LICENSE|LICENCE|COPYING|NOTICE)' }
+            foreach ($notice in $notices) { Copy-Item -LiteralPath $notice.FullName -Destination $destination }
+            $licenseIndex += @{ name = $package.name; version = $package.version; license = $package.license; notices = @($notices.Name) }
+          }
+          $licenseIndex | ConvertTo-Json -Depth 5 | Set-Content artifact/licenses/index.json -Encoding utf8
           $manifest = @{
             commit = '${{ github.sha }}'
             run_id = '${{ github.run_id }}'
@@ -58,6 +72,7 @@ jobs:
             artifact/Cargo.lock
             artifact/dependencies.json
             artifact/manifest.json
+            artifact/licenses/
           if-no-files-found: error
           retention-days: 7
       - name: Preserve diagnostic bootstrap files

@@ -11,5 +11,16 @@ Published experiments are scoped observations, not claims of production readines
 Build outputs must be selected explicitly for upload; whole-workspace artifact
 uploads are not permitted.
 
-The initial repository contains publication controls only. Research probes and
-workflows will be added as reviewed, reproducible experiments.
+The Windows diagnostic uses a pinned Rust toolchain and dependency lockfile.
+Run the manual `Native research probes` Actions workflow to compile it. CI builds
+the executable without starting Excel; live observations are collected locally.
+
+The executable creates its own hidden Excel instance and an unsaved synthetic
+workbook, checks COM invocation and typed array round trips, then closes its owned
+objects. It never attaches to an existing workbook. Do not run it against real
+business files. Event delivery, recovery, broad feature coverage and production
+readiness require separate research evidence.
+
+Artifacts contain only the selected executable, dependency/identity manifests,
+lockfile and dependency license notices. Bootstrap source is retained separately
+to make diagnostic build failures reproducible.
