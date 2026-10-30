@@ -4,7 +4,12 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
+[features]
+parser-candidate = ["dep:formualizer-parse", "dep:formualizer-common"]
+
 [dependencies]
+formualizer-parse = { version = "=4.1.0", default-features = false, optional = true }
+formualizer-common = { version = "=4.1.0", default-features = false, optional = true }
 windows-core = "=0.62.2"
 serde_json = "=1.0.145"
 windows = { version = "=0.62.2", features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Ole", "Win32_System_Variant", "Win32_UI_WindowsAndMessaging"] }

@@ -1,6 +1,11 @@
 name: Native research probes
 on:
   workflow_dispatch:
+    inputs:
+      refresh_lock:
+        description: Resolve reviewed new diagnostic dependencies
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -24,18 +29,22 @@ jobs:
             cargo generate-lockfile
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
-          cargo metadata --locked --format-version 1 > dependencies.json
+          if ('${{ inputs.refresh_lock }}' -eq 'true') {
+            cargo metadata --all-features --format-version 1 > dependencies.json
+          } else {
+            cargo metadata --all-features --locked --format-version 1 > dependencies.json
+          }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Check and build diagnostic
         shell: pwsh
         run: |
           cargo fmt --all
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --locked --target x86_64-pc-windows-msvc
+          cargo test --locked --all-features --target x86_64-pc-windows-msvc
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo clippy --locked --all-targets --target x86_64-pc-windows-msvc -- -D warnings
+          cargo clippy --locked --all-features --all-targets --target x86_64-pc-windows-msvc -- -D warnings
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo build --locked --release --target x86_64-pc-windows-msvc
+          cargo build --locked --all-features --release --target x86_64-pc-windows-msvc
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Record artifact identity
         shell: pwsh
@@ -83,6 +92,7 @@ jobs:
           path: |
             src/main.rs
             src/event_sink.rs
+            src/parser_candidate.rs
             Cargo.lock
           if-no-files-found: error
           retention-days: 7

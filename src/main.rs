@@ -1,6 +1,8 @@
 //! Disposable COM diagnostics. Never attaches to an existing workbook or instance.
 //! Raw VARIANTs are deliberately wrapped: generated bindings do not own their payloads.
 mod event_sink;
+#[cfg(feature = "parser-candidate")]
+mod parser_candidate;
 
 use serde_json::{Value, json};
 use std::{mem::ManuallyDrop, ptr};
@@ -525,6 +527,20 @@ fn native_event_checks(
 }
 
 fn main() {
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    #[cfg(feature = "parser-candidate")]
+    if arguments == ["--parser-candidate"] {
+        let report = parser_candidate::run_parser_candidate_probe();
+        println!("{report}");
+        if report["passed"] != true {
+            std::process::exit(1);
+        }
+        return;
+    }
+    if !arguments.is_empty() {
+        eprintln!("unsupported diagnostic arguments");
+        std::process::exit(2);
+    }
     let mut checks = Vec::new();
     let mut cleanup = json!({"owned_excel_quit":false});
     let outcome = (|| -> ProbeResult<Value> {

@@ -19,9 +19,9 @@ use std::{
 use windows::{
     Win32::{
         Foundation::{
-            DISP_E_BADPARAMCOUNT, DISP_E_MEMBERNOTFOUND,
-            DISP_E_UNKNOWNINTERFACE, DISP_E_UNKNOWNNAME, E_INVALIDARG, E_NOTIMPL, E_POINTER,
-            E_UNEXPECTED, WAIT_FAILED, WAIT_TIMEOUT,
+            DISP_E_BADPARAMCOUNT, DISP_E_MEMBERNOTFOUND, DISP_E_UNKNOWNINTERFACE,
+            DISP_E_UNKNOWNNAME, E_INVALIDARG, E_NOTIMPL, E_POINTER, E_UNEXPECTED, WAIT_FAILED,
+            WAIT_TIMEOUT,
         },
         System::{
             Com::{
@@ -222,7 +222,13 @@ fn known_argument_count(dispid: i32) -> Option<u32> {
 }
 
 impl ExcelSink {
-    fn record(&self, dispid: i32, argument_count: u32, named_argument_count: u32, named_ids: [i32; 4]) -> Result<()> {
+    fn record(
+        &self,
+        dispid: i32,
+        argument_count: u32,
+        named_argument_count: u32,
+        named_ids: [i32; 4],
+    ) -> Result<()> {
         let state = &self.observer.0;
         let thread_id = thread::current().id();
         if thread_id != state.owner_thread {
@@ -343,7 +349,11 @@ impl IDispatch_Impl for ExcelSink_Impl {
                 }
                 // Copy only bounded scalar DISPIDs. Caller storage is never retained.
                 let mut named_ids = [0; 4];
-                for (index, slot) in named_ids.iter_mut().enumerate().take(params.cNamedArgs as usize) {
+                for (index, slot) in named_ids
+                    .iter_mut()
+                    .enumerate()
+                    .take(params.cNamedArgs as usize)
+                {
                     *slot = unsafe { *params.rgdispidNamedArgs.add(index) };
                 }
                 Ok((params.cArgs, params.cNamedArgs, named_ids))
@@ -596,7 +606,6 @@ mod tests {
         assert_eq!(observer.stats().malformed, 1);
     }
 
-
     #[test]
     fn named_event_argument_ids_are_copied_and_missing_storage_is_rejected() {
         let (_sink, dispatch, observer) = new_sink(4);
@@ -609,19 +618,42 @@ mod tests {
             cNamedArgs: 2,
         };
         unsafe {
-            dispatch.Invoke(SHEET_CHANGE, &GUID::zeroed(), 0,
-                DISPATCH_METHOD | DISPATCH_PROPERTYGET, &params, None, None, None)
-        }.expect("named callback");
+            dispatch.Invoke(
+                SHEET_CHANGE,
+                &GUID::zeroed(),
+                0,
+                DISPATCH_METHOD | DISPATCH_PROPERTYGET,
+                &params,
+                None,
+                None,
+                None,
+            )
+        }
+        .expect("named callback");
         ids.fill(999);
         let records = observer.take_records().unwrap();
         assert_eq!(records[0].named_argument_count, 2);
         assert_eq!(records[0].named_ids, [1, 0, 0, 0]);
         assert!(!records[0].named_ids_truncated);
-        let missing = DISPPARAMS { rgdispidNamedArgs: std::ptr::null_mut(), ..params };
-        assert_code(unsafe {
-            dispatch.Invoke(SHEET_CHANGE, &GUID::zeroed(), 0, DISPATCH_METHOD,
-                &missing, None, None, None)
-        }, E_POINTER);
+        let missing = DISPPARAMS {
+            rgdispidNamedArgs: std::ptr::null_mut(),
+            ..params
+        };
+        assert_code(
+            unsafe {
+                dispatch.Invoke(
+                    SHEET_CHANGE,
+                    &GUID::zeroed(),
+                    0,
+                    DISPATCH_METHOD,
+                    &missing,
+                    None,
+                    None,
+                    None,
+                )
+            },
+            E_POINTER,
+        );
     }
 
     #[test]
