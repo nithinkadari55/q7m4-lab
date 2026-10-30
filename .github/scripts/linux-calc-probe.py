@@ -167,9 +167,13 @@ def uno_worker(connection, source, destination):
         WORKER_STAGE = "calculate"
         document.calculateAll()
         memory_mismatches = []
+        WORKER_STAGE = "sheet_collection"
+        sheets = document.getSheets()
         for sheet, address, _, old_cache, expected, identifier in CASES:
+            WORKER_STAGE = "sheet_lookup_" + identifier
+            worksheet = sheets.getByName(sheet)
             WORKER_STAGE = "cell_access_" + identifier
-            cell = document.getSheets().getByName(sheet).getCellRangeByName(address)
+            cell = worksheet.getCellRangeByName(address)
             WORKER_STAGE = "cell_error_" + identifier
             if cell.getError():
                 memory_mismatches.append({"case_id": identifier, "classification": "calculated_cell_error"})
