@@ -12,7 +12,10 @@ import os
 from pathlib import Path
 import signal
 import subprocess
+import sys
 import tempfile
+import time
+import uuid
 import xml.etree.ElementTree as E
 import zipfile
 
@@ -114,7 +117,74 @@ def read_results(path):
         return values
 
 
-def run():
+def uno_worker(connection, source, destination):
+    # Import only in the disposable Linux system-Python bridge process.
+    import uno
+
+    def prop(name, value):
+        result = uno.createUnoStruct("com.sun.star.beans.PropertyValue")
+        result.Name, result.Value = name, value
+        return result
+
+    local = uno.getComponentContext()
+    resolver = local.ServiceManager.createInstanceWithContext("com.sun.star.bridge.UnoUrlResolver", local)
+    deadline = time.monotonic() + 15
+    while True:
+        try:
+            context = resolver.resolve("uno:" + connection + ";urp;StarOffice.ComponentContext")
+            break
+        except Exception:
+            if time.monotonic() >= deadline:
+                raise RuntimeError("owned UNO bridge did not become ready") from None
+            time.sleep(.1)
+    desktop = context.ServiceManager.createInstanceWithContext("com.sun.star.frame.Desktop", context)
+    document = None
+    try:
+        document = desktop.loadComponentFromURL(Path(source).as_uri(), "_blank", 0, (
+            prop("Hidden", True), prop("ReadOnly", False), prop("UpdateDocMode", 0),
+            prop("MacroExecutionMode", 0), prop("RepairPackage", False)))
+        if document is None:
+            raise RuntimeError("synthetic document load returned no component")
+        document.enableAutomaticCalculation(False)
+        document.calculateAll()
+        document.storeAsURL(Path(destination).as_uri(), (
+            prop("FilterName", "Calc MS Excel 2007 XML"), prop("Overwrite", False)))
+    finally:
+        if document is not None:
+            document.close(True)
+        desktop.terminate()
+
+
+def convert_uno(source, destination, profile):
+    connection = "pipe,name=synthetic_calc_" + uuid.uuid4().hex
+    server = subprocess.Popen(["libreoffice", "-env:UserInstallation=" + profile.as_uri(),
+        "--headless", "--nologo", "--nodefault", "--norestore",
+        "--accept=" + connection + ";urp;StarOffice.ServiceManager"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    bridge = None
+    try:
+        bridge = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "--uno-worker",
+            connection, str(source), str(destination)], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, start_new_session=True)
+        try:
+            stdout, stderr = bridge.communicate(timeout=150)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("owned UNO bridge timed out") from None
+        if bridge.returncode:
+            # Synthetic code traceback only; no workbook values or UNO dump.
+            raise RuntimeError("owned UNO calculation bridge failed")
+        try:
+            server.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("owned UNO server did not exit after terminate") from None
+    finally:
+        for owned in (bridge, server):
+            if owned is not None and owned.poll() is None:
+                os.killpg(owned.pid, signal.SIGKILL)
+                owned.wait(timeout=15)
+
+
+def run(driver):
     if os.name != "posix":
         raise RuntimeError("Linux-only process-group diagnostic")
     version = subprocess.check_output(["libreoffice", "--version"], timeout=15, text=True).strip()
@@ -125,29 +195,39 @@ def run():
         output = root / "output"
         output.mkdir()
         profile = root / "profile"
-        process = subprocess.Popen(["libreoffice", "-env:UserInstallation=" + profile.as_uri(),
-            "--headless", "--nologo", "--nodefault", "--norestore", "--convert-to",
-            "xlsx:Calc MS Excel 2007 XML", "--outdir", str(output), str(source)],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
-        try:
-            stdout, stderr = process.communicate(timeout=120)
-        except subprocess.TimeoutExpired:
-            os.killpg(process.pid, signal.SIGKILL)
-            process.communicate(timeout=15)
-            raise RuntimeError("owned conversion process timed out") from None
         result = output / source.name
-        if process.returncode != 0 or not result.is_file():
+        if driver == "uno":
+            convert_uno(source, result, profile)
+        else:
+            process = subprocess.Popen(["libreoffice", "-env:UserInstallation=" + profile.as_uri(),
+                "--headless", "--nologo", "--nodefault", "--norestore", "--convert-to",
+                "xlsx:Calc MS Excel 2007 XML", "--outdir", str(output), str(source)],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+            try:
+                stdout, stderr = process.communicate(timeout=120)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.communicate(timeout=15)
+                raise RuntimeError("owned conversion process timed out") from None
+            if process.returncode != 0:
+                raise RuntimeError("owned conversion process failed")
+        if not result.is_file():
             raise RuntimeError("conversion did not create the expected private candidate")
         assert hashlib.sha256(source.read_bytes()).hexdigest() == initial_hash
         observed = read_results(result)
         mismatches = []
-        for sheet, cell, _, _, expected, identifier in CASES:
+        classes = []
+        for sheet, cell, _, old_cache, expected, identifier in CASES:
             actual = observed.get((sheet, cell))
             match = actual == expected if isinstance(expected, str) else isinstance(actual, (int, float)) and math.isclose(actual, expected, rel_tol=0, abs_tol=1e-10)
             if not match:
                 mismatches.append(identifier)
+                reason = "retained_source_cache" if actual == old_cache else "missing_value" if actual is None else "error_token" if isinstance(actual, str) and actual.startswith("#") else "nonmatching_result"
+                classes.append({"case_id": identifier, "classification": reason})
         # Emit reviewed case identifiers only, never detailed workbook results.
-        print(json.dumps({"engine": version, "case_count": len(CASES), "mismatch_case_ids": mismatches,
+        print(json.dumps({"engine": version, "driver": driver, "source_sha256": initial_hash,
+                          "case_count": len(CASES), "mismatch_case_ids": mismatches, "mismatch_classes": classes,
+                          "input_text_type_retained": observed.get(("Inputs", "A1")) == "9",
                           "source_unchanged": True, "detailed_artifacts_uploaded": False}))
         if mismatches:
             raise SystemExit(1)
@@ -156,8 +236,12 @@ def run():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--generate", type=Path)
+    parser.add_argument("--driver", choices=("cli", "uno"), default="cli")
+    parser.add_argument("--uno-worker", nargs=3, help=argparse.SUPPRESS)
     args = parser.parse_args()
-    if args.generate:
+    if args.uno_worker:
+        uno_worker(*args.uno_worker)
+    elif args.generate:
         print(generate(args.generate))
     else:
-        run()
+        run(args.driver)

@@ -1,6 +1,14 @@
 name: Linux external calculation research
 on:
   workflow_dispatch:
+    inputs:
+      driver:
+        description: Conversion-only control or explicit UNO calculateAll
+        type: choice
+        options:
+          - uno
+          - cli
+        default: uno
 permissions:
   contents: read
 jobs:
@@ -15,10 +23,12 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update -qq > "$RUNNER_TEMP/apt-update.log" 2>&1
-          sudo apt-get install --no-install-recommends -y libreoffice-calc > "$RUNNER_TEMP/apt-install.log" 2>&1
-          dpkg-query --show --showformat='${Package} ${Version}\n' libreoffice-core libreoffice-calc
+          sudo apt-get install --no-install-recommends -y libreoffice-calc python3-uno > "$RUNNER_TEMP/apt-install.log" 2>&1
+          dpkg-query --show --showformat='${Package} ${Version}\n' libreoffice-core libreoffice-calc python3-uno
       - name: Compare only authored synthetic cases
         shell: bash
+        env:
+          DRIVER: ${{ inputs.driver }}
         run: |
-          python .github/scripts/linux-calc-probe.py
+          /usr/bin/python3 .github/scripts/linux-calc-probe.py --driver "$DRIVER"
       # Deliberately no workbook, profile, conversion log, or results upload.
