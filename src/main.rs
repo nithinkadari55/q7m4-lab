@@ -439,6 +439,7 @@ fn native_event_checks(
     .dispatch()?;
     put(&target, "Value2", OwnedVariant::number(1.0))?;
     put(&formula, "Formula2", OwnedVariant::text("=A10*2"))?;
+    put(app, "Calculation", OwnedVariant::number(-4105.0))?;
     put(app, "EnableEvents", OwnedVariant::boolean(true))?;
     let mut subscription =
         EventSubscription::subscribe(app, 8).map_err(|e| format!("Advise: {e}"))?;
@@ -455,7 +456,7 @@ fn native_event_checks(
         report,
         "native_sta_event_delivery",
         change_seen && same_thread && !stats.faulted && stats.dropped == 0,
-        json!({"records":records,"owner_thread":format!("{:?}",stats.owner_thread),"pump_messages":pump.dispatched_messages,"quit_seen":pump.quit_seen,"pump_limit":pump.message_limit_reached}),
+        json!({"records":records,"owner_thread":format!("{:?}",stats.owner_thread),"pump_messages":pump.dispatched_messages,"quit_seen":pump.quit_seen,"pump_limit":pump.message_limit_reached,"invoke_attempts":stats.invoke_attempts,"type_info_calls":stats.type_info_calls,"type_info_count_calls":stats.type_info_count_calls,"malformed":stats.malformed,"faulted":stats.faulted,"dropped":stats.dropped,"last_callback_error":stats.last_callback_error.map(|h|format!("{:08x}",h.0))}),
     )?;
     let current = get(&formula, "Value2")?.scalar()?;
     check(

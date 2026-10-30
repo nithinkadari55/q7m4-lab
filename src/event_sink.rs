@@ -61,6 +61,10 @@ pub struct CallbackRecord {
 pub struct ObserverStats {
     pub owner_thread: ThreadId,
     pub accepted: u64,
+    pub invoke_attempts: u64,
+    pub type_info_calls: u64,
+    pub type_info_count_calls: u64,
+    pub last_callback_error: Option<HRESULT>,
     pub dropped: u64,
     pub unknown: u64,
     pub malformed: u64,
@@ -76,6 +80,10 @@ struct State {
     capacity: usize,
     queue: RefCell<VecDeque<CallbackRecord>>,
     accepted: Cell<u64>,
+    invoke_attempts: Cell<u64>,
+    type_info_calls: Cell<u64>,
+    type_info_count_calls: Cell<u64>,
+    last_callback_error: Cell<Option<HRESULT>>,
     dropped: Cell<u64>,
     unknown: Cell<u64>,
     malformed: Cell<u64>,
@@ -106,6 +114,10 @@ impl Observer {
             capacity,
             queue: RefCell::new(VecDeque::with_capacity(capacity)),
             accepted: Cell::new(0),
+            invoke_attempts: Cell::new(0),
+            type_info_calls: Cell::new(0),
+            type_info_count_calls: Cell::new(0),
+            last_callback_error: Cell::new(None),
             dropped: Cell::new(0),
             unknown: Cell::new(0),
             malformed: Cell::new(0),
@@ -124,6 +136,10 @@ impl Observer {
         ObserverStats {
             owner_thread: state.owner_thread,
             accepted: state.accepted.get(),
+            invoke_attempts: state.invoke_attempts.get(),
+            type_info_calls: state.type_info_calls.get(),
+            type_info_count_calls: state.type_info_count_calls.get(),
+            last_callback_error: state.last_callback_error.get(),
             dropped: state.dropped.get(),
             unknown: state.unknown.get(),
             malformed: state.malformed.get(),
@@ -230,11 +246,13 @@ impl ExcelSink {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 impl IDispatch_Impl for ExcelSink_Impl {
     fn GetTypeInfoCount(&self) -> Result<u32> {
-        // This fixed return cannot panic; generated thunk owns output handling.
+        // Generated thunk owns output handling.
+        increment(&self.observer.0.type_info_count_calls);
         Ok(0)
     }
 
     fn GetTypeInfo(&self, _itinfo: u32, _lcid: u32) -> Result<ITypeInfo> {
+        increment(&self.observer.0.type_info_calls);
         Err(Error::from_hresult(E_NOTIMPL))
     }
 
@@ -262,7 +280,8 @@ impl IDispatch_Impl for ExcelSink_Impl {
     ) -> Result<()> {
         let state = &self.observer.0;
         // All validation and diagnostic fault injection are INSIDE this boundary.
-        contained(state, || {
+        let outcome = contained(state, || {
+            increment(&state.invoke_attempts);
             #[cfg(test)]
             if state.panic_next.replace(false) {
                 panic!("injected event-sink diagnostic panic");
@@ -314,7 +333,11 @@ impl IDispatch_Impl for ExcelSink_Impl {
                 unsafe { result.write(VARIANT::default()) };
             }
             self.record(dispid, count)
-        })
+        });
+        if let Err(error) = &outcome {
+            state.last_callback_error.set(Some(error.code()));
+        }
+        outcome
     }
 }
 
