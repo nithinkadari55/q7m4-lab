@@ -47,7 +47,10 @@ pub(crate) struct Part {
     pub(crate) sha256: String,
 }
 
-pub(crate) fn inventory(bytes: &[u8], require_fixture: bool) -> ProbeResult<BTreeMap<String, Part>> {
+pub(crate) fn inventory(
+    bytes: &[u8],
+    require_fixture: bool,
+) -> ProbeResult<BTreeMap<String, Part>> {
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes))?;
     if archive.len() > ENTRY_COUNT_CAP {
         return Err(invalid("ZIP entry count cap exceeded"));
@@ -62,34 +65,50 @@ pub(crate) fn inventory(bytes: &[u8], require_fixture: bool) -> ProbeResult<BTre
             continue;
         }
         let name = entry.name().to_owned();
-        if name.starts_with('/') || name.contains('\\')
+        if name.starts_with('/')
+            || name.contains('\\')
             || name.split('/').any(|segment| segment == "..")
         {
             return Err(invalid("non-canonical package entry path"));
         }
-        total = total.checked_add(entry.size()).ok_or_else(|| invalid("ZIP size sum overflow"))?;
+        total = total
+            .checked_add(entry.size())
+            .ok_or_else(|| invalid("ZIP size sum overflow"))?;
         if entry.size() > ENTRY_CAP || total > EXPANDED_CAP {
             return Err(invalid("ZIP declared expansion cap exceeded"));
         }
         let mut data = Vec::new();
-        let remaining = EXPANDED_CAP.checked_sub(actual_total)
+        let remaining = EXPANDED_CAP
+            .checked_sub(actual_total)
             .ok_or_else(|| invalid("ZIP actual expansion accounting exceeded cap"))?;
         let allowance = ENTRY_CAP.min(remaining);
         entry.take(allowance + 1).read_to_end(&mut data)?;
         if data.len() as u64 > allowance {
             return Err(invalid("ZIP actual entry/aggregate expansion cap exceeded"));
         }
-        actual_total = actual_total.checked_add(data.len() as u64)
+        actual_total = actual_total
+            .checked_add(data.len() as u64)
             .ok_or_else(|| invalid("ZIP actual expansion sum overflow"))?;
         if name == FIXTURE_MARKER {
             marker_valid = data == FIXTURE_ID;
         }
-        if parts.insert(name, Part { bytes: data.len() as u64, sha256: hash(&data) }).is_some() {
+        if parts
+            .insert(
+                name,
+                Part {
+                    bytes: data.len() as u64,
+                    sha256: hash(&data),
+                },
+            )
+            .is_some()
+        {
             return Err(invalid("duplicate ZIP entry name"));
         }
     }
     if require_fixture && !marker_valid {
-        return Err(invalid("input is not the private synthetic fixture (marker absent/incorrect)"));
+        return Err(invalid(
+            "input is not the private synthetic fixture (marker absent/incorrect)",
+        ));
     }
     Ok(parts)
 }
@@ -102,12 +121,14 @@ pub(crate) fn coordinate(text: &str) -> ProbeResult<(u32, u32)> {
     let mut digits = false;
     for byte in text.bytes() {
         if byte.is_ascii_uppercase() && !digits {
-            column = column.checked_mul(26)
+            column = column
+                .checked_mul(26)
                 .and_then(|value| value.checked_add(u32::from(byte - b'A' + 1)))
                 .ok_or_else(|| invalid("column overflow"))?;
         } else if byte.is_ascii_digit() {
             digits = true;
-            row = row.checked_mul(10)
+            row = row
+                .checked_mul(10)
                 .and_then(|value| value.checked_add(u32::from(byte - b'0')))
                 .ok_or_else(|| invalid("row overflow"))?;
         } else {
@@ -119,4 +140,3 @@ pub(crate) fn coordinate(text: &str) -> ProbeResult<(u32, u32)> {
     }
     Ok((column, row))
 }
-

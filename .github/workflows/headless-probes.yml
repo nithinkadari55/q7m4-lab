@@ -58,7 +58,7 @@ jobs:
           TARGET: ${{ matrix.target }}
         run: |
           rustup show
-          cargo fmt --all
+          cargo fmt --all -- --check
           cargo metadata --all-features --locked --format-version 1 > dependencies.json
           cargo test -p headless-research --locked --target "$TARGET"
           cargo clippy -p headless-research --locked --all-targets --target "$TARGET" -- -D warnings
