@@ -20,27 +20,25 @@ use windows::{
     Win32::{
         Foundation::{
             DISP_E_BADPARAMCOUNT, DISP_E_MEMBERNOTFOUND, DISP_E_NONAMEDARGS,
-            DISP_E_UNKNOWNINTERFACE, DISP_E_UNKNOWNNAME, E_INVALIDARG, E_NOTIMPL,
-            E_POINTER, E_UNEXPECTED, WAIT_FAILED, WAIT_TIMEOUT,
+            DISP_E_UNKNOWNINTERFACE, DISP_E_UNKNOWNNAME, E_INVALIDARG, E_NOTIMPL, E_POINTER,
+            E_UNEXPECTED, WAIT_FAILED, WAIT_TIMEOUT,
         },
         System::{
             Com::{
-                DISPATCH_FLAGS, DISPATCH_METHOD, DISPPARAMS, EXCEPINFO,
-                IConnectionPoint, IConnectionPointContainer, IDispatch,
-                IDispatch_Impl, IDispatch_Vtbl, ITypeInfo,
+                DISPATCH_FLAGS, DISPATCH_METHOD, DISPPARAMS, EXCEPINFO, IConnectionPoint,
+                IConnectionPointContainer, IDispatch, IDispatch_Impl, IDispatch_Vtbl, ITypeInfo,
             },
             Variant::VARIANT,
         },
         UI::WindowsAndMessaging::{
-            DispatchMessageW, MSG, MWMO_INPUTAVAILABLE, MsgWaitForMultipleObjectsEx,
-            PM_REMOVE, PeekMessageW, QS_ALLINPUT, TranslateMessage, WM_QUIT,
+            DispatchMessageW, MSG, MWMO_INPUTAVAILABLE, MsgWaitForMultipleObjectsEx, PM_REMOVE,
+            PeekMessageW, QS_ALLINPUT, TranslateMessage, WM_QUIT,
         },
     },
     core::{Error, GUID, HRESULT, IUnknown, Interface, PCWSTR, Result, implement, interface},
 };
 
-pub const APP_EVENTS_IID: GUID =
-    GUID::from_u128(0x00024413_0000_0000_c000_000000000046);
+pub const APP_EVENTS_IID: GUID = GUID::from_u128(0x00024413_0000_0000_c000_000000000046);
 pub const SHEET_CALCULATE: i32 = 1563;
 pub const SHEET_CHANGE: i32 = 1564;
 pub const AFTER_CALCULATE: i32 = 2612;
@@ -158,7 +156,7 @@ impl Observer {
     }
 }
 
-#[implement(ExcelAppEvents, agile = false)]
+#[implement(ExcelAppEvents, Agile = false)]
 struct ExcelSink {
     observer: Observer,
 }
@@ -219,7 +217,11 @@ impl ExcelSink {
             return Ok(());
         }
         // with_capacity + the hard length bound prevents callback queue growth.
-        queue.push_back(CallbackRecord { dispid, argument_count, thread_id });
+        queue.push_back(CallbackRecord {
+            dispid,
+            argument_count,
+            thread_id,
+        });
         increment(&state.accepted);
         Ok(())
     }
@@ -337,11 +339,19 @@ impl EventSubscription {
             return Err(Error::from_hresult(E_INVALIDARG));
         }
         let observer = Observer::new(capacity)?;
-        let sink: ExcelAppEvents = ExcelSink { observer: observer.clone() }.into();
+        let sink: ExcelAppEvents = ExcelSink {
+            observer: observer.clone(),
+        }
+        .into();
         // Custom #[interface] has no implicit Param<IUnknown> hierarchy. Use QI.
         let unknown: IUnknown = sink.cast()?;
         let cookie = unsafe { point.Advise(&unknown) }?;
-        Ok(Self { point, cookie: Some(cookie), sink: Some(sink), observer })
+        Ok(Self {
+            point,
+            cookie: Some(cookie),
+            sink: Some(sink),
+            observer,
+        })
     }
 
     pub fn observer(&self) -> Observer {
@@ -419,9 +429,8 @@ pub fn pump_for(budget: Duration, max_messages: usize) -> Result<PumpReport> {
         }
         // At most 10ms of idle wait; never a plain sleep/channel blocking receive.
         let millis = remaining.as_millis().clamp(1, 10) as u32;
-        let status = unsafe {
-            MsgWaitForMultipleObjectsEx(None, millis, QS_ALLINPUT, MWMO_INPUTAVAILABLE)
-        };
+        let status =
+            unsafe { MsgWaitForMultipleObjectsEx(None, millis, QS_ALLINPUT, MWMO_INPUTAVAILABLE) };
         if status == WAIT_FAILED {
             return Err(Error::from_hresult(E_UNEXPECTED));
         }
@@ -437,15 +446,16 @@ pub fn pump_for(budget: Duration, max_messages: usize) -> Result<PumpReport> {
 mod tests {
     use super::*;
     use windows::{
-        Win32::System::Com::{
-            IConnectionPoint_Impl, IConnectionPoint_Vtbl, IEnumConnections,
-        },
+        Win32::System::Com::{IConnectionPoint_Impl, IConnectionPoint_Vtbl, IEnumConnections},
         core::Ref,
     };
 
     fn new_sink(capacity: usize) -> (ExcelAppEvents, IDispatch, Observer) {
         let observer = Observer::new(capacity).expect("bounded capacity");
-        let sink: ExcelAppEvents = ExcelSink { observer: observer.clone() }.into();
+        let sink: ExcelAppEvents = ExcelSink {
+            observer: observer.clone(),
+        }
+        .into();
         let dispatch = sink.cast::<IDispatch>().expect("inherited IDispatch QI");
         (sink, dispatch, observer)
     }
@@ -455,13 +465,24 @@ mod tests {
         // value independently; never introduce a shallow owning-payload clone.
         let mut args: Vec<VARIANT> = (0..count).map(|_| VARIANT::default()).collect();
         let params = DISPPARAMS {
-            rgvarg: if args.is_empty() { std::ptr::null_mut() } else { args.as_mut_ptr() },
+            rgvarg: if args.is_empty() {
+                std::ptr::null_mut()
+            } else {
+                args.as_mut_ptr()
+            },
             cArgs: count as u32,
             ..Default::default()
         };
         unsafe {
             dispatch.Invoke(
-                dispid, &GUID::zeroed(), 0, DISPATCH_METHOD, &params, None, None, None,
+                dispid,
+                &GUID::zeroed(),
+                0,
+                DISPATCH_METHOD,
+                &params,
+                None,
+                None,
+                None,
             )
         }
     }
@@ -474,7 +495,9 @@ mod tests {
     fn qi_custom_inherited_identity_unknown_and_non_agile() {
         let (sink, dispatch, observer) = new_sink(4);
         assert_eq!(ExcelAppEvents::IID, APP_EVENTS_IID);
-        let custom = dispatch.cast::<ExcelAppEvents>().expect("custom outgoing IID");
+        let custom = dispatch
+            .cast::<ExcelAppEvents>()
+            .expect("custom outgoing IID");
         let a: IUnknown = sink.cast().expect("IUnknown from custom");
         let b: IUnknown = dispatch.cast().expect("IUnknown from dispatch");
         assert_eq!(Interface::as_raw(&a), Interface::as_raw(&b));
@@ -505,7 +528,11 @@ mod tests {
         assert_eq!(records.len(), 3);
         assert_eq!(records[0].dispid, SHEET_CHANGE);
         assert_eq!(records[0].argument_count, 2);
-        assert!(records.iter().all(|r| r.thread_id == thread::current().id()));
+        assert!(
+            records
+                .iter()
+                .all(|r| r.thread_id == thread::current().id())
+        );
         assert_eq!(observer.stats().unknown, 1);
         assert!(observer.stats().dirty);
         observer.mark_reconciled();
@@ -518,25 +545,75 @@ mod tests {
         assert_code(invoke(&dispatch, SHEET_CHANGE, 1), DISP_E_BADPARAMCOUNT);
         assert_code(invoke(&dispatch, -1, 0), DISP_E_MEMBERNOTFOUND);
         assert_code(invoke(&dispatch, 900_001, 33), DISP_E_BADPARAMCOUNT);
-        let null_args = DISPPARAMS { cArgs: 2, ..Default::default() };
-        assert_code(unsafe {
-            dispatch.Invoke(SHEET_CHANGE, &GUID::zeroed(), 0, DISPATCH_METHOD,
-                &null_args, None, None, None)
-        }, E_POINTER);
-        assert_code(unsafe {
-            dispatch.Invoke(AFTER_CALCULATE, &GUID::zeroed(), 0, DISPATCH_METHOD,
-                std::ptr::null(), None, None, None)
-        }, E_POINTER);
+        let null_args = DISPPARAMS {
+            cArgs: 2,
+            ..Default::default()
+        };
+        assert_code(
+            unsafe {
+                dispatch.Invoke(
+                    SHEET_CHANGE,
+                    &GUID::zeroed(),
+                    0,
+                    DISPATCH_METHOD,
+                    &null_args,
+                    None,
+                    None,
+                    None,
+                )
+            },
+            E_POINTER,
+        );
+        assert_code(
+            unsafe {
+                dispatch.Invoke(
+                    AFTER_CALCULATE,
+                    &GUID::zeroed(),
+                    0,
+                    DISPATCH_METHOD,
+                    std::ptr::null(),
+                    None,
+                    None,
+                    None,
+                )
+            },
+            E_POINTER,
+        );
         let empty = DISPPARAMS::default();
-        assert_code(unsafe {
-            dispatch.Invoke(AFTER_CALCULATE, &APP_EVENTS_IID, 0, DISPATCH_METHOD,
-                &empty, None, None, None)
-        }, DISP_E_UNKNOWNINTERFACE);
-        let named = DISPPARAMS { cNamedArgs: 1, ..Default::default() };
-        assert_code(unsafe {
-            dispatch.Invoke(AFTER_CALCULATE, &GUID::zeroed(), 0, DISPATCH_METHOD,
-                &named, None, None, None)
-        }, DISP_E_NONAMEDARGS);
+        assert_code(
+            unsafe {
+                dispatch.Invoke(
+                    AFTER_CALCULATE,
+                    &APP_EVENTS_IID,
+                    0,
+                    DISPATCH_METHOD,
+                    &empty,
+                    None,
+                    None,
+                    None,
+                )
+            },
+            DISP_E_UNKNOWNINTERFACE,
+        );
+        let named = DISPPARAMS {
+            cNamedArgs: 1,
+            ..Default::default()
+        };
+        assert_code(
+            unsafe {
+                dispatch.Invoke(
+                    AFTER_CALCULATE,
+                    &GUID::zeroed(),
+                    0,
+                    DISPATCH_METHOD,
+                    &named,
+                    None,
+                    None,
+                    None,
+                )
+            },
+            DISP_E_NONAMEDARGS,
+        );
         assert!(observer.take_records().expect("drain").is_empty());
         assert_eq!(observer.stats().malformed, 7);
         assert!(observer.stats().dirty);
@@ -573,10 +650,21 @@ mod tests {
     fn injected_panic_is_caught_even_before_invalid_argument_checks() {
         let (_sink, dispatch, observer) = new_sink(1);
         observer.0.panic_next.set(true);
-        assert_code(unsafe {
-            dispatch.Invoke(AFTER_CALCULATE, std::ptr::null(), 0, DISPATCH_METHOD,
-                std::ptr::null(), None, None, None)
-        }, E_UNEXPECTED);
+        assert_code(
+            unsafe {
+                dispatch.Invoke(
+                    AFTER_CALCULATE,
+                    std::ptr::null(),
+                    0,
+                    DISPATCH_METHOD,
+                    std::ptr::null(),
+                    None,
+                    None,
+                    None,
+                )
+            },
+            E_UNEXPECTED,
+        );
         assert!(observer.stats().faulted);
         assert!(observer.stats().dirty);
         assert_eq!(observer.stats().malformed, 0);
@@ -590,11 +678,15 @@ mod tests {
         fail_unadvise: Cell<bool>,
     }
 
-    #[implement(IConnectionPoint, agile = false)]
-    struct MockPoint { state: Rc<MockState> }
+    #[implement(IConnectionPoint, Agile = false)]
+    struct MockPoint {
+        state: Rc<MockState>,
+    }
 
     impl IConnectionPoint_Impl for MockPoint_Impl {
-        fn GetConnectionInterface(&self) -> Result<GUID> { Ok(APP_EVENTS_IID) }
+        fn GetConnectionInterface(&self) -> Result<GUID> {
+            Ok(APP_EVENTS_IID)
+        }
         fn GetConnectionPointContainer(&self) -> Result<IConnectionPointContainer> {
             Err(Error::from_hresult(E_NOTIMPL))
         }
@@ -625,8 +717,14 @@ mod tests {
 
     fn subscription() -> (EventSubscription, Rc<MockState>) {
         let state = Rc::new(MockState::default());
-        let point: IConnectionPoint = MockPoint { state: state.clone() }.into();
-        (EventSubscription::from_connection_point(point, 4).expect("mock Advise"), state)
+        let point: IConnectionPoint = MockPoint {
+            state: state.clone(),
+        }
+        .into();
+        (
+            EventSubscription::from_connection_point(point, 4).expect("mock Advise"),
+            state,
+        )
     }
 
     #[test]
@@ -671,9 +769,22 @@ mod tests {
 
     #[test]
     fn pump_rejects_unbounded_inputs_and_zero_budget_never_dispatches() {
-        assert_eq!(pump_for(Duration::ZERO, 1).expect("zero budget"), PumpReport::default());
-        assert_eq!(pump_for(Duration::from_secs(31), 1).expect_err("bound").code(), E_INVALIDARG);
-        assert_eq!(pump_for(Duration::ZERO, 0).expect_err("message bound").code(), E_INVALIDARG);
+        assert_eq!(
+            pump_for(Duration::ZERO, 1).expect("zero budget"),
+            PumpReport::default()
+        );
+        assert_eq!(
+            pump_for(Duration::from_secs(31), 1)
+                .expect_err("bound")
+                .code(),
+            E_INVALIDARG
+        );
+        assert_eq!(
+            pump_for(Duration::ZERO, 0)
+                .expect_err("message bound")
+                .code(),
+            E_INVALIDARG
+        );
         assert!(Observer::new(0).is_err());
         assert!(Observer::new(MAX_CAPACITY + 1).is_err());
     }
