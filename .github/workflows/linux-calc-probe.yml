@@ -1,0 +1,24 @@
+name: Linux external calculation research
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-calculation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install distribution engine for this disposable research job
+        shell: bash
+        run: |
+          sudo apt-get update -qq > "$RUNNER_TEMP/apt-update.log" 2>&1
+          sudo apt-get install --no-install-recommends -y libreoffice-calc > "$RUNNER_TEMP/apt-install.log" 2>&1
+          dpkg-query --show --showformat='${Package} ${Version}\n' libreoffice-core libreoffice-calc
+      - name: Compare only authored synthetic cases
+        shell: bash
+        run: |
+          python .github/scripts/linux-calc-probe.py
+      # Deliberately no workbook, profile, conversion log, or results upload.

@@ -19,6 +19,13 @@ The read-only `calamine-read-probe` keeps streaming shared-formula metadata and
 typed caches separate, then compares bounded dense APIs only after diagnostic
 geometry/formula gates. These gates are not a production hostile-upload boundary.
 
+The manual `Linux external calculation research` workflow separately checks a
+distribution build of LibreOffice against authored synthetic scalar cases,
+including stale caches, names, LET, LAMBDA and a date boundary. Its Python driver
+is a disposable research harness, not a production backend. It does not establish
+dynamic-array, advanced-object or round-trip fidelity. Workbooks and detailed
+runtime observations are not uploaded; the log names only mismatching case IDs.
+
 Only reviewed source code, build workflows and synthetic fixtures belong in this
 public checkout. Detailed observations and local working material are retained
 separately. Their exclusion from this repository does not remove them from the
