@@ -49,6 +49,7 @@ CASES = [
     ("Calc", "O1", "COUNT(Inputs!A1:A2)", 0, 1, "count-text-exclusion"),
     ("Calc", "P1", '_xlfn.TEXTJOIN("-",TRUE,Inputs!A1:A2)', "old", "9-3", "textjoin"),
 ]
+WORKER_STAGE = "not_started"
 
 
 def generate(directory):
@@ -132,6 +133,8 @@ def read_results(path):
 
 
 def uno_worker(connection, source, destination):
+    global WORKER_STAGE
+    WORKER_STAGE = "bootstrap"
     # Import only in the disposable Linux system-Python bridge process.
     import uno
 
@@ -154,27 +157,34 @@ def uno_worker(connection, source, destination):
     desktop = context.ServiceManager.createInstanceWithContext("com.sun.star.frame.Desktop", context)
     document = None
     try:
+        WORKER_STAGE = "load"
         document = desktop.loadComponentFromURL(Path(source).as_uri(), "_blank", 0, (
             prop("Hidden", True), prop("ReadOnly", False), prop("UpdateDocMode", 0),
             prop("MacroExecutionMode", 0), prop("RepairPackage", False)))
         if document is None:
             raise RuntimeError("synthetic document load returned no component")
         document.enableAutomaticCalculation(False)
+        WORKER_STAGE = "calculate"
         document.calculateAll()
         memory_mismatches = []
         for sheet, address, _, old_cache, expected, identifier in CASES:
+            WORKER_STAGE = "cell_access_" + identifier
             cell = document.getSheets().getByName(sheet).getCellRangeByName(address)
+            WORKER_STAGE = "cell_error_" + identifier
             if cell.getError():
                 memory_mismatches.append({"case_id": identifier, "classification": "calculated_cell_error"})
             else:
+                WORKER_STAGE = "cell_value_" + identifier
                 actual = cell.getString() if isinstance(expected, str) else cell.getValue()
                 match = actual == expected if isinstance(expected, str) else math.isclose(actual, expected, rel_tol=0, abs_tol=1e-10)
                 if not match:
                     memory_mismatches.append({"case_id": identifier, "classification": "retained_source_cache" if actual == old_cache else "nonmatching_result"})
+        WORKER_STAGE = "store"
         document.storeAsURL(Path(destination).as_uri(), (
             prop("FilterName", "Calc MS Excel 2007 XML"), prop("Overwrite", False)))
         print(json.dumps({"in_memory_cases": len(CASES), "in_memory_mismatches": memory_mismatches}))
     finally:
+        WORKER_STAGE = "close"
         if document is not None:
             document.close(True)
         desktop.terminate()
@@ -196,8 +206,12 @@ def convert_uno(source, destination, profile, executable):
         except subprocess.TimeoutExpired:
             raise RuntimeError("owned UNO bridge timed out") from None
         if bridge.returncode:
-            # Synthetic code traceback only; no workbook values or UNO dump.
-            raise RuntimeError("owned UNO calculation bridge failed")
+            # The worker emits a controlled stage/class receipt, no values/dump.
+            try:
+                failure = json.loads(stderr)
+            except json.JSONDecodeError:
+                failure = {"stage": "unclassified", "exception_type": "unclassified"}
+            raise RuntimeError("owned UNO bridge failed: " + json.dumps(failure))
         memory = json.loads(stdout)
         if memory.get("in_memory_cases") != len(CASES):
             raise RuntimeError("incomplete in-memory calculation observation")
@@ -273,7 +287,11 @@ if __name__ == "__main__":
     parser.add_argument("--uno-worker", nargs=3, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.uno_worker:
-        uno_worker(*args.uno_worker)
+        try:
+            uno_worker(*args.uno_worker)
+        except Exception as error:
+            print(json.dumps({"stage": WORKER_STAGE, "exception_type": type(error).__name__}), file=sys.stderr)
+            raise SystemExit(1) from None
     elif args.generate:
         print(generate(args.generate))
     else:
