@@ -111,15 +111,16 @@ impl OwnedVariant {
         }
     }
     fn array(rows: i32, cols: i32, row_base: i32, col_base: i32) -> ProbeResult<Self> {
-        // SAFEARRAYBOUND stores the rightmost dimension first.
+        // Use API dimension 1 for rows and dimension 2 for columns.
+        // SafeArrayCreate's input bounds follow the same order as its index API.
         let bounds = [
-            SAFEARRAYBOUND {
-                cElements: cols as u32,
-                lLbound: col_base,
-            },
             SAFEARRAYBOUND {
                 cElements: rows as u32,
                 lLbound: row_base,
+            },
+            SAFEARRAYBOUND {
+                cElements: cols as u32,
+                lLbound: col_base,
             },
         ];
         let array = unsafe { SafeArrayCreate(VT_VARIANT, 2, bounds.as_ptr()) };
@@ -302,7 +303,7 @@ fn excel_checks(owner: &mut OwnedExcel, report: &mut Vec<Value>) -> ProbeResult<
     let mut pid = 0;
     unsafe {
         GetWindowThreadProcessId(
-            windows::Win32::Foundation::HWND(hwnd_value as usize as *mut _),
+            windows::Win32::Foundation::HWND(hwnd_value as u32 as usize as *mut _),
             Some(&mut pid),
         );
     }
@@ -454,5 +455,38 @@ fn main() {
     );
     if !passed {
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn array_axes_lower_bounds_and_owned_element_copies() {
+        let _sta = Apartment::new().expect("STA");
+        let mut array = OwnedVariant::array(2, 3, 5, 7).expect("array");
+        for row in 5..=6 {
+            for col in 7..=9 {
+                let text = OwnedVariant::text(&format!("{row}:{col}"));
+                array.array_put(row, col, &text).expect("valid coordinates");
+                // The source BSTR is cleared here. The SAFEARRAY must retain its own copy.
+            }
+        }
+        assert!(array.array_put(4, 7, &OwnedVariant::number(1.0)).is_err());
+        let actual = array.array_snapshot().expect("snapshot");
+        assert_eq!(actual["bounds"], json!([[5, 6], [7, 9]]));
+        let cells: Vec<_> = actual["cells"].as_array().unwrap().iter().map(|v|v["value"].as_str().unwrap()).collect();
+        assert_eq!(cells, ["5:7", "5:8", "5:9", "6:7", "6:8", "6:9"]);
+    }
+
+    #[test]
+    fn worksheet_error_is_distinct_from_equal_numeric_value() {
+        let error = OwnedVariant::error(-2146826281).scalar().unwrap();
+        let number = OwnedVariant::number(-2146826281.0).scalar().unwrap();
+        assert_eq!(error["kind"], "error");
+        assert_eq!(number["kind"], "number");
+        assert_ne!(error, number);
+        assert_ne!(OwnedVariant::missing().vt(), OwnedVariant::default().vt());
     }
 }
