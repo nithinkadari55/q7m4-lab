@@ -25,7 +25,7 @@ use windows::{
         },
         System::{
             Com::{
-                DISPATCH_FLAGS, DISPATCH_METHOD, DISPPARAMS, EXCEPINFO, IConnectionPoint,
+                DISPATCH_FLAGS, DISPATCH_METHOD, DISPATCH_PROPERTYGET, DISPPARAMS, EXCEPINFO, IConnectionPoint,
                 IConnectionPointContainer, IDispatch, IDispatch_Impl, IDispatch_Vtbl, ITypeInfo,
             },
             Variant::VARIANT,
@@ -62,6 +62,8 @@ pub struct ObserverStats {
     pub owner_thread: ThreadId,
     pub accepted: u64,
     pub invoke_attempts: u64,
+    pub last_raw_dispid: i32,
+    pub last_raw_flags: u16,
     pub type_info_calls: u64,
     pub type_info_count_calls: u64,
     pub last_callback_error: Option<HRESULT>,
@@ -81,6 +83,8 @@ struct State {
     queue: RefCell<VecDeque<CallbackRecord>>,
     accepted: Cell<u64>,
     invoke_attempts: Cell<u64>,
+    last_raw_dispid: Cell<i32>,
+    last_raw_flags: Cell<u16>,
     type_info_calls: Cell<u64>,
     type_info_count_calls: Cell<u64>,
     last_callback_error: Cell<Option<HRESULT>>,
@@ -115,6 +119,8 @@ impl Observer {
             queue: RefCell::new(VecDeque::with_capacity(capacity)),
             accepted: Cell::new(0),
             invoke_attempts: Cell::new(0),
+            last_raw_dispid: Cell::new(0),
+            last_raw_flags: Cell::new(0),
             type_info_calls: Cell::new(0),
             type_info_count_calls: Cell::new(0),
             last_callback_error: Cell::new(None),
@@ -137,6 +143,8 @@ impl Observer {
             owner_thread: state.owner_thread,
             accepted: state.accepted.get(),
             invoke_attempts: state.invoke_attempts.get(),
+            last_raw_dispid: state.last_raw_dispid.get(),
+            last_raw_flags: state.last_raw_flags.get(),
             type_info_calls: state.type_info_calls.get(),
             type_info_count_calls: state.type_info_count_calls.get(),
             last_callback_error: state.last_callback_error.get(),
@@ -282,6 +290,8 @@ impl IDispatch_Impl for ExcelSink_Impl {
         // All validation and diagnostic fault injection are INSIDE this boundary.
         let outcome = contained(state, || {
             increment(&state.invoke_attempts);
+            state.last_raw_dispid.set(dispid);
+            state.last_raw_flags.set(flags.0);
             #[cfg(test)]
             if state.panic_next.replace(false) {
                 panic!("injected event-sink diagnostic panic");
@@ -295,7 +305,10 @@ impl IDispatch_Impl for ExcelSink_Impl {
                 if unsafe { *riid } != GUID::zeroed() {
                     return Err(Error::from_hresult(DISP_E_UNKNOWNINTERFACE));
                 }
-                if flags != DISPATCH_METHOD || dispid < 0 {
+                // Excel 16.0 build 18526 was observed sending METHOD|PROPERTYGET.
+                let permitted_flags = flags == DISPATCH_METHOD
+                    || flags == (DISPATCH_METHOD | DISPATCH_PROPERTYGET);
+                if !permitted_flags || dispid < 0 {
                     return Err(Error::from_hresult(DISP_E_MEMBERNOTFOUND));
                 }
                 let params = unsafe { &*params };
@@ -539,6 +552,33 @@ mod tests {
         assert!(!observer.stats().sink_dropped);
         drop(sink);
         assert!(observer.stats().sink_dropped);
+    }
+
+    #[test]
+    fn excel_combined_method_get_flag_is_accepted_and_property_only_is_rejected() {
+        let (_sink, dispatch, observer) = new_sink(4);
+        let params = DISPPARAMS::default();
+        for flags in [DISPATCH_METHOD | DISPATCH_PROPERTYGET, DISPATCH_PROPERTYGET] {
+            let outcome = unsafe {
+                dispatch.Invoke(
+                    AFTER_CALCULATE,
+                    &GUID::zeroed(),
+                    0,
+                    flags,
+                    &params,
+                    None,
+                    None,
+                    None,
+                )
+            };
+            if flags == DISPATCH_PROPERTYGET {
+                assert_code(outcome, DISP_E_MEMBERNOTFOUND);
+            } else {
+                outcome.expect("observed Excel flags accepted");
+            }
+        }
+        assert_eq!(observer.take_records().unwrap().len(), 1);
+        assert_eq!(observer.stats().malformed, 1);
     }
 
     #[test]
