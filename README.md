@@ -56,6 +56,20 @@ Published experiments are scoped observations, not claims of production readines
 Build outputs must be selected explicitly for upload; whole-workspace artifact
 uploads are not permitted.
 
+The standalone `crates/eval-core-research` diagnostic pins Formualizer's evaluator,
+parser and common types to one Git commit. Its manual `Pinned Rust evaluator
+semantics research` workflow resolves one shared lock, builds on Linux and Windows,
+and attempts53 independent synthetic cases. Expected values enter comparison only.
+This core-registration route does not exercise XLSX loading, saving, cache
+invalidation or general dependency discovery. Dates retain their native variant
+and a separately labeled, unqualified calendar-to-serial candidate comparison.
+Logical evaluator budgets and direct-child timeout controls do not establish a
+hard memory or process-tree sandbox. Runtime files stay private; public logs contain
+only reviewed case identifiers, statuses, classes and hashes. Selected executable,
+lock, exact formatted source and dependency notices have separate build receipts.
+Calculation differences produce a failing comparison stage after build artifacts
+have been retained; a successful build is not a compatibility claim.
+
 The Windows diagnostic uses a pinned Rust toolchain and dependency lockfile.
 Run the manual `Native research probes` Actions workflow to compile it. CI builds
 the executable without starting Excel; live observations are collected locally.

@@ -1,0 +1,92 @@
+name: Pinned Rust evaluator semantics research
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Resolve one standalone lockfile
+        shell: bash
+        run: |
+          rustup show
+          cargo +1.99.1 generate-lockfile --manifest-path crates/eval-core-research/Cargo.toml
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: eval-shared-lock
+          path: crates/eval-core-research/Cargo.lock
+          if-no-files-found: error
+          retention-days: 7
+  portable:
+    needs: resolve
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: eval-shared-lock
+          path: crates/eval-core-research
+      - name: Supervisor fault controls
+        id: controls
+        shell: bash
+        run: |
+          python crates/eval-core-research/test_supervisor_controls.py --result-file supervisor-ci-controls.json
+      - name: Format and build exact-source diagnostic
+        id: build
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          rustup show
+          cargo +1.99.1 fmt --manifest-path crates/eval-core-research/Cargo.toml
+          cargo +1.99.1 metadata --locked --format-version 1 --manifest-path crates/eval-core-research/Cargo.toml > eval-dependencies.json
+          cargo +1.99.1 build --locked --release --target "$TARGET" --manifest-path crates/eval-core-research/Cargo.toml --bin formualizer-eval-semantic-probe
+          python .github/scripts/package-eval-core.py --target "$TARGET"
+      - name: Retain selected executable and provenance
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: eval-core-${{ matrix.target }}
+          path: eval-artifact/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Collect all independent evaluator case slots
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.controls.outcome == 'success' }}
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          extension=""
+          if [ "$TARGET" = x86_64-pc-windows-msvc ]; then extension=".exe"; fi
+          binary="crates/eval-core-research/target/$TARGET/release/formualizer-eval-semantic-probe$extension"
+          "$binary" --catalog
+          python crates/eval-core-research/run_probe.py --binary "$binary" --result-file native-eval-results.json
+      - name: Retain exact bootstrap source and lock on build failure
+        if: ${{ !cancelled() && steps.build.outcome == 'failure' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: eval-bootstrap-${{ matrix.target }}
+          path: |
+            crates/eval-core-research/Cargo.toml
+            crates/eval-core-research/Cargo.lock
+            crates/eval-core-research/probe.rs
+            crates/eval-core-research/model-fixture.json
+          if-no-files-found: error
+          retention-days: 7

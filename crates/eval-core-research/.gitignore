@@ -1,0 +1,9 @@
+# Selected diagnostic inputs only; keep all local observations out of Git.
+/*
+!/.gitignore
+!/Cargo.toml
+!/Cargo.lock
+!/probe.rs
+!/model-fixture.json
+!/run_probe.py
+!/test_supervisor_controls.py

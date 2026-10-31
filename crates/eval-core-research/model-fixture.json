@@ -1,0 +1,520 @@
+{
+  "scope": "core-only isolated target closure; no XLSX reader/writer or saved caches",
+  "source_commit": "dfd2f96457ff0929114a3e6b786c2761e6db5c5d",
+  "literals": [
+    {
+      "sheet": "Inputs",
+      "address": "A1",
+      "value": "9"
+    },
+    {
+      "sheet": "Inputs",
+      "address": "A2",
+      "value": 3.0
+    },
+    {
+      "sheet": "Inputs",
+      "address": "B2",
+      "value": 5.0
+    },
+    {
+      "sheet": "Calc",
+      "address": "G1",
+      "value": 41.0
+    }
+  ],
+  "names": {
+    "NamedInput": "Inputs!$A$1",
+    "FnAddOne": "_xlfn.LAMBDA(_xlpm.x,_xlpm.x+1)",
+    "FnFactorial": "_xlfn.LAMBDA(_xlpm.n,IF(_xlpm.n<2,1,_xlpm.n*FnFactorial(_xlpm.n-1)))"
+  },
+  "cases": [
+    {
+      "id": "semantic-v2/00-input-precedent",
+      "corpus": "semantic-v2",
+      "sheet": "Inputs",
+      "address": "B1",
+      "formula": "A1*2",
+      "expected": 18,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/01-lambda-direct",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A1",
+      "formula": "_xlfn.LAMBDA(_xlpm.x,_xlpm.x+1)(Inputs!A2)",
+      "expected": 4,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/02-lambda-named",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A2",
+      "formula": "FnAddOne(Inputs!A2)",
+      "expected": 4,
+      "required_names": [
+        "FnAddOne"
+      ]
+    },
+    {
+      "id": "semantic-v2/03-lambda-let-local",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A3",
+      "formula": "_xlfn.LET(_xlpm.fn,_xlfn.LAMBDA(_xlpm.x,_xlpm.x+1),_xlpm.fn(Inputs!A2))",
+      "expected": 4,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/04-lambda-recursive-name",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A4",
+      "formula": "FnFactorial(5)",
+      "expected": 120,
+      "required_names": [
+        "FnFactorial"
+      ]
+    },
+    {
+      "id": "semantic-v2/05-let-shadowing",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A5",
+      "formula": "_xlfn.LET(_xlpm.x,2,_xlfn.LET(_xlpm.x,3,_xlpm.x)+_xlpm.x)",
+      "expected": 5,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/06-sum-text-scalar",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A6",
+      "formula": "SUM(1,\"2\",TRUE)",
+      "expected": 4,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/07-sum-text-reference",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A7",
+      "formula": "SUM(Inputs!A1:A2)",
+      "expected": 3,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/08-arithmetic-text-reference",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A8",
+      "formula": "Inputs!A1+1",
+      "expected": 10,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/09-sum-boolean-scalar",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A9",
+      "formula": "SUM(1,TRUE,FALSE)",
+      "expected": 2,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/10-count-scalar-coercion",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A10",
+      "formula": "COUNT(1,\"2\",TRUE)",
+      "expected": 3,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/11-count-text-reference",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A11",
+      "formula": "COUNT(Inputs!A1:A2)",
+      "expected": 1,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/12-date-1900-feb28",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A12",
+      "formula": "DATE(1900,2,28)",
+      "expected": 59,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/13-date-1900-feb29",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A13",
+      "formula": "DATE(1900,2,29)",
+      "expected": 60,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/14-date-1900-mar1",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A14",
+      "formula": "DATE(1900,3,1)",
+      "expected": 61,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/15-date-1900-difference",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A15",
+      "formula": "DATE(1900,3,1)-DATE(1900,2,28)",
+      "expected": 2,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/16-date-1904-real-leap",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A16",
+      "formula": "DATE(1904,3,1)-DATE(1904,2,28)",
+      "expected": 2,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/17-date-2000-real-leap",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A17",
+      "formula": "DATE(2000,3,1)-DATE(2000,2,28)",
+      "expected": 2,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/18-sequence-aggregate",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A18",
+      "formula": "SUM(_xlfn.SEQUENCE(3))",
+      "expected": 6,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/19-filter-aggregate",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A19",
+      "formula": "SUM(_xlfn._xlws.FILTER(Inputs!A1:A2,ISNUMBER(Inputs!A1:A2)))",
+      "expected": 3,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/20-map-aggregate",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A20",
+      "formula": "SUM(_xlfn.MAP(Inputs!A2:B2,_xlfn.LAMBDA(_xlpm.x,_xlpm.x*2)))",
+      "expected": 16,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/21-reduce-aggregate",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A21",
+      "formula": "_xlfn.REDUCE(0,Inputs!A2:B2,_xlfn.LAMBDA(_xlpm.acc,_xlpm.x,_xlpm.acc+_xlpm.x))",
+      "expected": 8,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/22-scan-aggregate",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A22",
+      "formula": "SUM(_xlfn.SCAN(0,Inputs!A2:B2,_xlfn.LAMBDA(_xlpm.acc,_xlpm.x,_xlpm.acc+_xlpm.x)))",
+      "expected": 11,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/23-byrow-aggregate",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A23",
+      "formula": "SUM(_xlfn.BYROW(Inputs!A1:B2,_xlfn.LAMBDA(_xlpm.rr,SUM(_xlpm.rr))))",
+      "expected": 26,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/24-bycol-aggregate",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A24",
+      "formula": "SUM(_xlfn.BYCOL(Inputs!A1:B2,_xlfn.LAMBDA(_xlpm.cc,SUM(_xlpm.cc))))",
+      "expected": 26,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/25-take-aggregate",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A25",
+      "formula": "SUM(_xlfn.TAKE({1,2;3,4},1))",
+      "expected": 3,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/26-drop-aggregate",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A26",
+      "formula": "SUM(_xlfn.DROP({1,2;3,4},1))",
+      "expected": 7,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/27-choosecols-aggregate",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A27",
+      "formula": "SUM(_xlfn.CHOOSECOLS({1,2;3,4},2))",
+      "expected": 6,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/28-chooserows-aggregate",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A28",
+      "formula": "SUM(_xlfn.CHOOSEROWS({1,2;3,4},2))",
+      "expected": 7,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/29-vstack-aggregate",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A29",
+      "formula": "SUM(_xlfn.VSTACK(1,2))",
+      "expected": 3,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/30-hstack-aggregate",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A30",
+      "formula": "SUM(_xlfn.HSTACK(1,2))",
+      "expected": 3,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/31-tocol-aggregate",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A31",
+      "formula": "SUM(_xlfn.TOCOL({1,2;3,4}))",
+      "expected": 10,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/32-torow-aggregate",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A32",
+      "formula": "SUM(_xlfn.TOROW({1,2;3,4}))",
+      "expected": 10,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/33-textsplit-scalar",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A33",
+      "formula": "_xlfn.TEXTJOIN(\"-\",TRUE,_xlfn.TEXTSPLIT(\"a,b\",\",\"))",
+      "expected": "a-b",
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/34-unique-aggregate",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A34",
+      "formula": "SUM(_xlfn.UNIQUE({1;1;2}))",
+      "expected": 3,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/35-sort-scalar",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A35",
+      "formula": "INDEX(_xlfn._xlws.SORT({3;1;2}),1)",
+      "expected": 1,
+      "required_names": []
+    },
+    {
+      "id": "semantic-v2/36-xmatch-scalar",
+      "corpus": "semantic-v2",
+      "sheet": "Calc",
+      "address": "A36",
+      "formula": "_xlfn.XMATCH(3,Inputs!A1:A2)",
+      "expected": 2,
+      "required_names": []
+    },
+    {
+      "id": "control-v1/00-direct",
+      "corpus": "control-v1",
+      "sheet": "Inputs",
+      "address": "B1",
+      "formula": "A1*2",
+      "expected": 18,
+      "required_names": []
+    },
+    {
+      "id": "control-v1/01-transitive",
+      "corpus": "control-v1",
+      "sheet": "Calc",
+      "address": "A1",
+      "formula": "Inputs!B1+1",
+      "expected": 19,
+      "required_names": []
+    },
+    {
+      "id": "control-v1/02-defined-name",
+      "corpus": "control-v1",
+      "sheet": "Calc",
+      "address": "B1",
+      "formula": "NamedInput+10",
+      "expected": 19,
+      "required_names": [
+        "NamedInput"
+      ]
+    },
+    {
+      "id": "control-v1/03-whole-column-text-exclusion",
+      "corpus": "control-v1",
+      "sheet": "Calc",
+      "address": "C1",
+      "formula": "SUM(Inputs!A:A)",
+      "expected": 3,
+      "required_names": []
+    },
+    {
+      "id": "control-v1/04-cross-sheet",
+      "corpus": "control-v1",
+      "sheet": "Calc",
+      "address": "D1",
+      "formula": "Inputs!A1+100",
+      "expected": 109,
+      "required_names": []
+    },
+    {
+      "id": "control-v1/05-indirect-scalar",
+      "corpus": "control-v1",
+      "sheet": "Calc",
+      "address": "E1",
+      "formula": "INDIRECT(\"'Inputs'!A1\")*3",
+      "expected": 27,
+      "required_names": []
+    },
+    {
+      "id": "control-v1/06-constant-formula",
+      "corpus": "control-v1",
+      "sheet": "Calc",
+      "address": "F1",
+      "formula": "2+3",
+      "expected": 5,
+      "required_names": []
+    },
+    {
+      "id": "control-v1/07-sumproduct-types",
+      "corpus": "control-v1",
+      "sheet": "Calc",
+      "address": "H1",
+      "formula": "SUMPRODUCT(Inputs!A1:A2,Inputs!A1:A2)",
+      "expected": 9,
+      "required_names": []
+    },
+    {
+      "id": "control-v1/08-error-recovery",
+      "corpus": "control-v1",
+      "sheet": "Calc",
+      "address": "I1",
+      "formula": "IFERROR(1/0,42)",
+      "expected": 42,
+      "required_names": []
+    },
+    {
+      "id": "control-v1/09-let",
+      "corpus": "control-v1",
+      "sheet": "Calc",
+      "address": "J1",
+      "formula": "_xlfn.LET(_xlpm.x,Inputs!A1,_xlpm.x*2)",
+      "expected": 18,
+      "required_names": []
+    },
+    {
+      "id": "control-v1/10-xlookup",
+      "corpus": "control-v1",
+      "sheet": "Calc",
+      "address": "K1",
+      "formula": "_xlfn.XLOOKUP(3,Inputs!A1:A2,Inputs!B1:B2,\"missing\")",
+      "expected": 5,
+      "required_names": []
+    },
+    {
+      "id": "control-v1/11-lambda-invocation",
+      "corpus": "control-v1",
+      "sheet": "Calc",
+      "address": "L1",
+      "formula": "_xlfn.LAMBDA(_xlpm.x,_xlpm.x+1)(Inputs!A2)",
+      "expected": 4,
+      "required_names": []
+    },
+    {
+      "id": "control-v1/12-date-1900-boundary",
+      "corpus": "control-v1",
+      "sheet": "Calc",
+      "address": "M1",
+      "formula": "DATE(1900,3,1)-DATE(1900,2,28)",
+      "expected": 2,
+      "required_names": []
+    },
+    {
+      "id": "control-v1/13-scalar-coercion",
+      "corpus": "control-v1",
+      "sheet": "Calc",
+      "address": "N1",
+      "formula": "SUM(1,\"2\",TRUE)",
+      "expected": 4,
+      "required_names": []
+    },
+    {
+      "id": "control-v1/14-count-text-exclusion",
+      "corpus": "control-v1",
+      "sheet": "Calc",
+      "address": "O1",
+      "formula": "COUNT(Inputs!A1:A2)",
+      "expected": 1,
+      "required_names": []
+    },
+    {
+      "id": "control-v1/15-textjoin",
+      "corpus": "control-v1",
+      "sheet": "Calc",
+      "address": "P1",
+      "formula": "_xlfn.TEXTJOIN(\"-\",TRUE,Inputs!A1:A2)",
+      "expected": "9-3",
+      "required_names": []
+    }
+  ],
+  "sources": {
+    "semantic-calc-v2-json": "ead346c85c314aaabac78db0856bd50e01de520b085aa49f84a386a2c4c8d58b",
+    "native-qualified-control-generator": "faafe301df95af3733b1f69b5175fe3828d301cf56135f7dfe7df70c92360025"
+  }
+}
