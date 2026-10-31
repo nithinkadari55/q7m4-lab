@@ -1,0 +1,10 @@
+# Reviewed synthetic diagnostic inputs only.
+/*
+!/.gitignore
+!/Cargo.toml
+!/Cargo.lock
+!/probe.rs
+!/import-fixtures.json
+!/prepare_fixtures.py
+!/run_probe.py
+!/test_supervisor_controls.py

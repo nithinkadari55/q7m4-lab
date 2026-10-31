@@ -1,0 +1,24 @@
+[package]
+name = "formualizer-workbook-import-research"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[[bin]]
+name = "formualizer-workbook-import-probe"
+path = "probe.rs"
+
+[dependencies]
+formualizer-workbook = { git = "https://github.com/psu3d0/formualizer", rev = "dfd2f96457ff0929114a3e6b786c2761e6db5c5d", version = "=0.13.0", default-features = false, features = ["json", "xlsx-recalc"] }
+formualizer-eval = { git = "https://github.com/psu3d0/formualizer", rev = "dfd2f96457ff0929114a3e6b786c2761e6db5c5d", version = "=0.13.0", default-features = false }
+formualizer-common = { git = "https://github.com/psu3d0/formualizer", rev = "dfd2f96457ff0929114a3e6b786c2761e6db5c5d", version = "=4.1.0", default-features = false }
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.145"
+sha2 = "=0.11.0"
+
+[profile.release]
+panic = "unwind"
+debug = 0
+lto = false

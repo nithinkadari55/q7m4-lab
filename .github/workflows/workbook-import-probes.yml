@@ -1,0 +1,116 @@
+name: Pinned Rust workbook import research
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Resolve one shared standalone dependency lock
+        shell: bash
+        run: |
+          rustup show
+          if [ -f crates/workbook-import-research/Cargo.lock ]; then
+            cargo +1.99.1 metadata --locked --format-version 1 --manifest-path crates/workbook-import-research/Cargo.toml > /dev/null
+          else
+            cargo +1.99.1 generate-lockfile --manifest-path crates/workbook-import-research/Cargo.toml
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: workbook-import-shared-lock
+          path: crates/workbook-import-research/Cargo.lock
+          if-no-files-found: error
+          retention-days: 7
+  portable:
+    needs: resolve
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: workbook-import-shared-lock
+          path: crates/workbook-import-research
+      - name: Supervisor and fixture fault controls
+        id: controls
+        shell: bash
+        run: python crates/workbook-import-research/test_supervisor_controls.py --result-file "$RUNNER_TEMP/import-supervisor-controls.private.json"
+      - name: Reconstruct hash-admitted authored inputs
+        id: fixtures
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: python crates/workbook-import-research/prepare_fixtures.py
+      - name: Format and build exact-source diagnostic
+        id: build
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          rustup show
+          cargo +1.99.1 fmt --manifest-path crates/workbook-import-research/Cargo.toml
+          cargo +1.99.1 metadata --locked --format-version 1 --manifest-path crates/workbook-import-research/Cargo.toml > workbook-import-dependencies.json
+          cargo +1.99.1 build --locked --release --target "$TARGET" --manifest-path crates/workbook-import-research/Cargo.toml --bin formualizer-workbook-import-probe
+      - name: Native calibration controls
+        id: native
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.fixtures.outcome == 'success' }}
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: cargo +1.99.1 test --locked --release --target "$TARGET" --manifest-path crates/workbook-import-research/Cargo.toml
+      - name: Package selected executable and provenance
+        id: package
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: python .github/scripts/package-workbook-import.py --target "$TARGET"
+      - name: Retain selected executable and provenance
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: workbook-import-${{ matrix.target }}
+          path: workbook-import-artifact/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Collect every independent import comparison
+        id: comparison
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.controls.outcome == 'success' && steps.fixtures.outcome == 'success' && steps.package.outcome == 'success' }}
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          NATIVE_CONTROL_OUTCOME: ${{ steps.native.outcome }}
+        run: |
+          echo "Native calibration outcome: $NATIVE_CONTROL_OUTCOME (review separately from these observations)"
+          extension=""
+          if [ "$TARGET" = x86_64-pc-windows-msvc ]; then extension=".exe"; fi
+          binary="crates/workbook-import-research/target/$TARGET/release/formualizer-workbook-import-probe$extension"
+          "$binary" --catalog
+          python crates/workbook-import-research/run_probe.py --binary "$binary" --result-dir "$RUNNER_TEMP/import-runtime-private"
+      - name: Retain exact selected source and lock on build failure
+        if: ${{ !cancelled() && steps.build.outcome == 'failure' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: workbook-import-bootstrap-${{ matrix.target }}
+          path: |
+            crates/workbook-import-research/Cargo.toml
+            crates/workbook-import-research/Cargo.lock
+            crates/workbook-import-research/probe.rs
+            crates/workbook-import-research/import-fixtures.json
+          if-no-files-found: error
+          retention-days: 7
