@@ -20,6 +20,9 @@ import calc_probe_runtime as rt
 spec = importlib.util.spec_from_file_location("authored_fixture", Path(__file__).with_name("linux-calc-probe.py"))
 fixture = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fixture)
+semantic_spec = importlib.util.spec_from_file_location("semantic_fixture", Path(__file__).with_name("semantic-calc-probe.py"))
+semantic = importlib.util.module_from_spec(semantic_spec)
+semantic_spec.loader.exec_module(semantic)
 CASES = fixture.CASES
 GOLD = {(s, a): {"value": expected, "formula": "=" + formula} for s, a, formula, _, expected, _ in CASES}
 GOLD.update({(s, a): {"value": expected, "formula": None} for s, a, expected in rt.CONTROLS})
@@ -136,6 +139,33 @@ def valid_receipt():
 
 
 class DiagnosticFaultControls(unittest.TestCase):
+    def test_expanded_corpus_collects_late_case_failure_within_receipt_bound(self):
+        data = {(s, a): {"value": v, "formula": "=" + f} for s, a, f, _, v, _ in semantic.CASES}
+        data.update({(s, a): {"value": v, "formula": None} for s, a, v in rt.CONTROLS})
+        report = {"probe_errors": []}
+        with tempfile.TemporaryDirectory() as tmp:
+            receipt = Path(tmp) / "receipt.json"
+            rt.inspect_document(Document({("Calc", "A36", "all")}, data), semantic.CASES, report, lambda r: rt.checkpoint(receipt, r))
+            self.assertLess(receipt.stat().st_size, rt.REPORT_CAP)
+        self.assertEqual(len(report["cases"]), 37)
+        self.assertEqual(sum(row["observation_complete"] for row in report["cases"]), 36)
+        self.assertEqual(report["cases"][-1]["case_id"], "xmatch-scalar")
+        self.assertFalse(report["cases"][-1]["observation_complete"])
+
+    def test_expanded_admission_rejects_mutated_part_without_changing_old_corpus(self):
+        with tempfile.TemporaryDirectory(prefix="calc-research-") as tmp:
+            root = Path(tmp).resolve()
+            source = semantic.generate(root / "input")
+            (root / "output").mkdir()
+            destination = root / "output/synthetic-calc.xlsx"
+            rt.source_admission(source, destination, semantic.QUALIFIED_PART_SHA256)
+            with self.assertRaises(ValueError):
+                rt.source_admission(source, destination, fixture.QUALIFIED_PART_SHA256)
+            wrong = dict(semantic.QUALIFIED_PART_SHA256)
+            wrong['xl/workbook.xml'] = '0' * 64
+            with self.assertRaises(ValueError):
+                rt.source_admission(source, destination, wrong)
+
     def test_export_only_control_never_claims_memory_observation(self):
         report = {"probe_errors": []}
         doc = Document()

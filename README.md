@@ -38,6 +38,15 @@ retains bounded partial receipts and reports independent case/API/cleanup failur
 together. Probe failures and observed compatibility mismatches have separate exit
 codes. Runtime summaries contain reviewed identifiers and statuses, not cell values.
 
+The separate `Expanded Linux semantics research` workflow compares the original
+16-case control and a37-case native-qualified synthetic corpus under matching
+distribution/vendor runtimes. New cases cover named/recursive LAMBDA, LET scoping,
+coercion, date boundaries and array-capable functions. All37 expectations matched
+native Excel after explicit calculation; the input passed independent schema
+validation. Scalar results here do not establish spill geometry. The four jobs
+collect all failures and upload no runtime workbooks or detailed observations.
+The original corpus and runtime comparison remain unchanged.
+
 Only reviewed source code, build workflows and synthetic fixtures belong in this
 public checkout. Detailed observations and local working material are retained
 separately. Their exclusion from this repository does not remove them from the
