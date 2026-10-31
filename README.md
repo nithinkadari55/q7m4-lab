@@ -74,6 +74,12 @@ at API admission. Compatibility prefixes and fixture expressions remain intact.
 Independent literal/AST controls and two executable model calibrations guard this
 boundary before collecting the complete cohort. The dependency notice inventory
 explicitly lists missing files; it does not approve production redistribution.
+The core provider delegates both runtime and read-only planning function lookup
+and declares its immutable local-provider revision separately from registry
+epochs, following the upstream resolver contract. Builtin scalar/range controls
+check that integration. Error receipts hash the complete diagnostic detail.
+An explicit local `--private-diagnostic` flag emits bounded detail to stderr for
+private investigation; CI and the supervisor never enable it.
 
 The Windows diagnostic uses a pinned Rust toolchain and dependency lockfile.
 Run the manual `Native research probes` Actions workflow to compile it. CI builds

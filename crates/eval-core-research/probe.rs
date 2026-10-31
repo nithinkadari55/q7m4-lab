@@ -15,11 +15,13 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 const FIXTURE: &str = include_str!("model-fixture.json");
 const FIXTURE_HASH: &str = "ff3e0352c6ab5be142448df56a085319323d9cf6479d53455128885423fdae9f";
 const COMMIT: &str = "dfd2f96457ff0929114a3e6b786c2761e6db5c5d";
+static PRIVATE_DIAGNOSTIC: AtomicBool = AtomicBool::new(false);
 
 // OOXML <f> and defined-name expressions omit '='. This parser's input API
 // distinguishes formulas from literal text using that marker. Adapt only this
@@ -107,8 +109,19 @@ impl TableResolver for CoreContext {
     }
 }
 impl FunctionProvider for CoreContext {
+    // No local overrides exist in this provider. As in upstream IoResolver,
+    // revision0 identifies that immutable provider layer; global registry epochs
+    // are tracked separately by the engine and planning snapshots.
+    fn planning_semantic_revision(&self) -> Option<u64> {
+        Some(0)
+    }
+
     fn get_function(&self, ns: &str, name: &str) -> Option<Arc<dyn formualizer_eval::function::Function>> {
         formualizer_eval::function_registry::get(ns, name)
+    }
+
+    fn get_function_for_planning(&self, ns: &str, name: &str) -> Option<Arc<dyn formualizer_eval::function::Function>> {
+        formualizer_eval::function_registry::get_for_planning(ns, name)
     }
 }
 impl SourceResolver for CoreContext {}
@@ -123,15 +136,26 @@ fn hashed_json(value: &Value) -> String {
     hash(value.to_string().as_bytes())
 }
 
+fn diagnostic_hash(error: impl std::fmt::Display) -> String {
+    let message = error.to_string();
+    if PRIVATE_DIAGNOSTIC.load(Ordering::Relaxed) {
+        // Explicit local-only mode. CI and the supervisor never enable it.
+        // Detailed synthetic errors go to private stderr, never receipt stdout.
+        eprintln!("{}", message.chars().take(2048).collect::<String>());
+    }
+    hash(message.as_bytes())
+}
+
 fn failure(case: &Case, stage: &str, details_hash: String) -> Value {
     json!({"id": case.id, "status": "probe_error", "class": stage, "hash": details_hash})
 }
 
 fn error_record(case: &Case, status: &str, error: ExcelError) -> Value {
+    let digest = diagnostic_hash(&error);
     if let ExcelErrorExtra::Resource { detail } = error.extra() {
-        return json!({"id": case.id, "status": "resource_limit", "class": format!("resource:{}", detail.reason.as_str()), "hash": hash(detail.reason.as_str().as_bytes())});
+        return json!({"id": case.id, "status": "resource_limit", "class": format!("resource:{}", detail.reason.as_str()), "hash": digest});
     }
-    json!({"id": case.id, "status": status, "class": format!("error:{}", error.kind), "hash": hash(error.kind.to_string().as_bytes())})
+    json!({"id": case.id, "status": status, "class": format!("error:{}", error.kind), "hash": digest})
 }
 
 fn addr(text: &str) -> Option<(u32, u32)> {
@@ -175,29 +199,29 @@ fn setup(fixture: &Fixture, case: &Case) -> Result<Engine<CoreContext>, (&'stati
     let cells: Cells = Arc::new(Mutex::new(BTreeMap::new()));
     let mut engine = Engine::new(CoreContext { cells: Arc::clone(&cells) }, config);
     for sheet in ["Inputs", "Calc"] {
-        engine.add_sheet(sheet).map_err(|err| ("sheet_setup", hash(err.kind.to_string().as_bytes())))?;
+        engine.add_sheet(sheet).map_err(|err| ("sheet_setup", diagnostic_hash(&err)))?;
     }
     for input in &fixture.literals {
         let (row, col) = addr(&input.address).ok_or(("fixture_address", hash(b"invalid")))?;
         let value = literal(&input.value).ok_or(("fixture_literal", hash(b"invalid")))?;
         engine.set_cell_value(&input.sheet, row, col, value.clone())
-            .map_err(|err| ("literal_setup", hash(err.kind.to_string().as_bytes())))?;
+            .map_err(|err| ("literal_setup", diagnostic_hash(&err)))?;
         cells.lock().map_err(|_| ("literal_setup", hash(b"mirror_lock")))?
             .insert((input.sheet.clone(), row, col), value);
     }
     for name in &case.required_names {
         let formula = fixture.names.get(name).ok_or(("fixture_name", hash(b"missing")))?;
-        let ast = parse_raw_formula(formula).map_err(|err| ("name_parse", hash(err.to_string().as_bytes())))?;
+        let ast = parse_raw_formula(formula).map_err(|err| ("name_parse", diagnostic_hash(&err)))?;
         engine.define_name(name, NamedDefinition::Formula { ast, dependencies: Vec::new(), range_deps: Vec::new() }, NameScope::Workbook)
-            .map_err(|err| ("name_registration", hash(err.kind.to_string().as_bytes())))?;
+            .map_err(|err| ("name_registration", diagnostic_hash(&err)))?;
     }
     // The only formula precedent required by these corpora. This is calculated,
     // never populated with the native expectation or the workbook's old cache.
-    let precedent = parse_raw_formula("A1*2").map_err(|err| ("precedent_parse", hash(err.to_string().as_bytes())))?;
+    let precedent = parse_raw_formula("A1*2").map_err(|err| ("precedent_parse", diagnostic_hash(&err)))?;
     engine.set_cell_formula("Inputs", 1, 2, precedent)
-        .map_err(|err| ("precedent_setup", hash(err.kind.to_string().as_bytes())))?;
+        .map_err(|err| ("precedent_setup", diagnostic_hash(&err)))?;
     let actual_precursor = engine.evaluate_cell("Inputs", 1, 2)
-        .map_err(|err| ("precedent_evaluation", hash(err.kind.to_string().as_bytes())))?
+        .map_err(|err| ("precedent_evaluation", diagnostic_hash(&err)))?
         .ok_or(("precedent_unobserved", hash(b"none")))?;
     // Preserve the candidate observation, including an Error variant, in the
     // callback mirror. Never write expected_case values or replace the formula.
@@ -244,10 +268,10 @@ fn run_case(fixture: &Fixture, case: &Case) -> Value {
     let Some((row, col)) = addr(&case.address) else { return failure(case, "fixture_address", hash(b"invalid")); };
     let ast = match parse_raw_formula(&case.formula) {
         Ok(ast) => ast,
-        Err(err) => return failure(case, "target_parse", hash(err.to_string().as_bytes())),
+        Err(err) => return failure(case, "target_parse", diagnostic_hash(&err)),
     };
     if let Err(err) = engine.set_cell_formula(&case.sheet, row, col, ast) {
-        return failure(case, "target_ingest", hash(err.kind.to_string().as_bytes()));
+        return failure(case, "target_ingest", diagnostic_hash(&err));
     }
     match engine.evaluate_cell(&case.sheet, row, col) {
         Ok(Some(value)) => observe(case, value),
@@ -265,6 +289,7 @@ fn main() {
         _ => { println!("{{\"status\":\"probe_error\",\"class\":\"fixture_admission\"}}"); std::process::exit(2); }
     };
     let args: Vec<String> = std::env::args().collect();
+    PRIVATE_DIAGNOSTIC.store(args.iter().any(|arg| arg == "--private-diagnostic"), Ordering::Relaxed);
     if args.get(1).map(String::as_str) == Some("--catalog") {
         let cases: Vec<Value> = fixture.cases.iter().enumerate().map(|(index, case)| json!({"index": index, "id": case.id, "corpus": case.corpus})).collect();
         println!("{}", json!({"class": "core_only_no_xlsx_import", "source_commit": COMMIT, "fixture_hash": FIXTURE_HASH, "cases": cases}));
@@ -284,6 +309,7 @@ mod tests {
     use super::{FIXTURE, FIXTURE_HASH, Fixture, hash, parse, parse_raw_formula, run_case};
     use formualizer_common::LiteralValue;
     use formualizer_parse::parser::ASTNodeType;
+    use formualizer_eval::traits::FunctionProvider;
 
     #[test]
     fn sha256_empty_vector() {
@@ -334,6 +360,28 @@ mod tests {
             let case = fixture.cases.iter().find(|case| case.id == id).unwrap();
             let observed = run_case(&fixture, case);
             assert_eq!(observed["status"], "match", "{id}");
+        }
+    }
+
+    #[test]
+    fn builtin_provider_planning_contract() {
+        let engine = super::Engine::new(super::CoreContext { cells: Default::default() }, super::EvalConfig::default());
+        assert_eq!(engine.planning_semantic_revision(), Some(0));
+        for name in ["SUM", "_xlfn.SUM"] {
+            let runtime = engine.get_function("", name).unwrap();
+            let planned = engine.get_function_for_planning("", name).unwrap();
+            assert!(std::sync::Arc::ptr_eq(&runtime, &planned));
+        }
+    }
+
+    #[test]
+    fn builtin_scalar_and_range_calibration() {
+        let fixture: Fixture = serde_json::from_str(FIXTURE).unwrap();
+        for (expression, expected) in [("SUM(1,2)", 3), ("SUM(Inputs!A1:A2)", 3)] {
+            let case = super::Case { id: "calibration/builtin".into(), corpus: "calibration".into(), sheet: "Calc".into(),
+                address: "F1".into(), formula: expression.into(), expected: serde_json::json!(expected), required_names: Vec::new() };
+            let observed = run_case(&fixture, &case);
+            assert_eq!(observed["status"], "match");
         }
     }
 }
