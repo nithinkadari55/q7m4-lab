@@ -58,7 +58,7 @@ uploads are not permitted.
 
 The standalone `crates/eval-core-research` diagnostic pins Formualizer's evaluator,
 parser and common types to one Git commit. Its manual `Pinned Rust evaluator
-semantics research` workflow resolves one shared lock, builds on Linux and Windows,
+semantics research` workflow verifies one reviewed shared lock, builds on Linux and Windows,
 and attempts53 independent synthetic cases. Expected values enter comparison only.
 This core-registration route does not exercise XLSX loading, saving, cache
 invalidation or general dependency discovery. Dates retain their native variant

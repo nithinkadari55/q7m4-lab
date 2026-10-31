@@ -105,7 +105,7 @@ impl Resolver for CoreContext {}
 impl EvaluationContext for CoreContext {}
 
 fn hash(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    Sha256::digest(bytes).iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 fn hashed_json(value: &Value) -> String {
@@ -266,4 +266,24 @@ fn main() {
     let record = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_case(&fixture, case)))
         .unwrap_or_else(|_| failure(case, "panic", hash(b"panic_payload_suppressed")));
     println!("{record}");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FIXTURE, FIXTURE_HASH, hash};
+
+    #[test]
+    fn sha256_empty_vector() {
+        assert_eq!(hash(b""), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    }
+
+    #[test]
+    fn sha256_abc_vector() {
+        assert_eq!(hash(b"abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    }
+
+    #[test]
+    fn embedded_fixture_admission() {
+        assert_eq!(hash(FIXTURE.as_bytes()), FIXTURE_HASH);
+    }
 }

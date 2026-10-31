@@ -11,11 +11,11 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-      - name: Resolve one standalone lockfile
+      - name: Verify the reviewed shared standalone lockfile
         shell: bash
         run: |
           rustup show
-          cargo +1.99.1 generate-lockfile --manifest-path crates/eval-core-research/Cargo.toml
+          cargo +1.99.1 metadata --locked --format-version 1 --manifest-path crates/eval-core-research/Cargo.toml > /dev/null
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: eval-shared-lock
@@ -57,6 +57,7 @@ jobs:
           rustup show
           cargo +1.99.1 fmt --manifest-path crates/eval-core-research/Cargo.toml
           cargo +1.99.1 metadata --locked --format-version 1 --manifest-path crates/eval-core-research/Cargo.toml > eval-dependencies.json
+          cargo +1.99.1 test --locked --release --target "$TARGET" --manifest-path crates/eval-core-research/Cargo.toml
           cargo +1.99.1 build --locked --release --target "$TARGET" --manifest-path crates/eval-core-research/Cargo.toml --bin formualizer-eval-semantic-probe
           python .github/scripts/package-eval-core.py --target "$TARGET"
       - name: Retain selected executable and provenance
