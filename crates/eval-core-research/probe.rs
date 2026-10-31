@@ -9,7 +9,7 @@ use formualizer_eval::traits::{
     EvaluationContext, FunctionProvider, InMemoryRange, NamedRangeResolver, Range, RangeResolver,
     ReferenceResolver, Resolver, SourceResolver, Table, TableResolver,
 };
-use formualizer_parse::parser::{TableReference, parse};
+use formualizer_parse::parser::{ASTNode, ParserError, TableReference, parse};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -20,6 +20,17 @@ use std::time::Duration;
 const FIXTURE: &str = include_str!("model-fixture.json");
 const FIXTURE_HASH: &str = "ff3e0352c6ab5be142448df56a085319323d9cf6479d53455128885423fdae9f";
 const COMMIT: &str = "dfd2f96457ff0929114a3e6b786c2761e6db5c5d";
+
+// OOXML <f> and defined-name expressions omit '='. This parser's input API
+// distinguishes formulas from literal text using that marker. Adapt only this
+// admission syntax; retain every compatibility prefix and the frozen raw corpus.
+fn parse_raw_formula(formula: &str) -> Result<ASTNode, ParserError> {
+    if formula.starts_with('=') {
+        parse(formula)
+    } else {
+        parse(format!("={formula}"))
+    }
+}
 
 #[derive(Deserialize)]
 struct Fixture {
@@ -176,13 +187,13 @@ fn setup(fixture: &Fixture, case: &Case) -> Result<Engine<CoreContext>, (&'stati
     }
     for name in &case.required_names {
         let formula = fixture.names.get(name).ok_or(("fixture_name", hash(b"missing")))?;
-        let ast = parse(formula).map_err(|err| ("name_parse", hash(err.to_string().as_bytes())))?;
+        let ast = parse_raw_formula(formula).map_err(|err| ("name_parse", hash(err.to_string().as_bytes())))?;
         engine.define_name(name, NamedDefinition::Formula { ast, dependencies: Vec::new(), range_deps: Vec::new() }, NameScope::Workbook)
             .map_err(|err| ("name_registration", hash(err.kind.to_string().as_bytes())))?;
     }
     // The only formula precedent required by these corpora. This is calculated,
     // never populated with the native expectation or the workbook's old cache.
-    let precedent = parse("A1*2").map_err(|err| ("precedent_parse", hash(err.to_string().as_bytes())))?;
+    let precedent = parse_raw_formula("A1*2").map_err(|err| ("precedent_parse", hash(err.to_string().as_bytes())))?;
     engine.set_cell_formula("Inputs", 1, 2, precedent)
         .map_err(|err| ("precedent_setup", hash(err.kind.to_string().as_bytes())))?;
     let actual_precursor = engine.evaluate_cell("Inputs", 1, 2)
@@ -231,7 +242,7 @@ fn run_case(fixture: &Fixture, case: &Case) -> Value {
         Err((stage, digest)) => return failure(case, stage, digest),
     };
     let Some((row, col)) = addr(&case.address) else { return failure(case, "fixture_address", hash(b"invalid")); };
-    let ast = match parse(&case.formula) {
+    let ast = match parse_raw_formula(&case.formula) {
         Ok(ast) => ast,
         Err(err) => return failure(case, "target_parse", hash(err.to_string().as_bytes())),
     };
@@ -270,7 +281,9 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{FIXTURE, FIXTURE_HASH, hash};
+    use super::{FIXTURE, FIXTURE_HASH, Fixture, hash, parse, parse_raw_formula, run_case};
+    use formualizer_common::LiteralValue;
+    use formualizer_parse::parser::ASTNodeType;
 
     #[test]
     fn sha256_empty_vector() {
@@ -285,5 +298,42 @@ mod tests {
     #[test]
     fn embedded_fixture_admission() {
         assert_eq!(hash(FIXTURE.as_bytes()), FIXTURE_HASH);
+    }
+
+    #[test]
+    fn raw_parser_literal_control() {
+        assert!(matches!(parse("1+1").unwrap().node_type, ASTNodeType::Literal(LiteralValue::Text(_))));
+    }
+
+    #[test]
+    fn formula_marker_admission() {
+        for expression in ["1+1", "=1+1", "A1*2"] {
+            assert!(matches!(parse_raw_formula(expression).unwrap().node_type, ASTNodeType::BinaryOp { .. }));
+        }
+    }
+
+    #[test]
+    fn successful_corpus_parses_are_not_literal_text() {
+        let fixture: Fixture = serde_json::from_str(FIXTURE).unwrap();
+        let mut parsed = 0;
+        for expression in fixture.cases.iter().map(|case| &case.formula).chain(fixture.names.values()) {
+            // Unsupported syntax remains an independently collected case-stage
+            // observation; it must not suppress the whole runtime cohort.
+            if let Ok(ast) = parse_raw_formula(expression) {
+                assert!(!matches!(ast.node_type, ASTNodeType::Literal(LiteralValue::Text(_))));
+                parsed += 1;
+            }
+        }
+        assert!(parsed >= 2);
+    }
+
+    #[test]
+    fn core_model_calibration() {
+        let fixture: Fixture = serde_json::from_str(FIXTURE).unwrap();
+        for id in ["control-v1/00-direct", "control-v1/06-constant-formula"] {
+            let case = fixture.cases.iter().find(|case| case.id == id).unwrap();
+            let observed = run_case(&fixture, case);
+            assert_eq!(observed["status"], "match", "{id}");
+        }
     }
 }

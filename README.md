@@ -69,6 +69,11 @@ only reviewed case identifiers, statuses, classes and hashes. Selected executabl
 lock, exact formatted source and dependency notices have separate build receipts.
 Calculation differences produce a failing comparison stage after build artifacts
 have been retained; a successful build is not a compatibility claim.
+Raw OOXML formula expressions receive the parser's required leading equals marker
+at API admission. Compatibility prefixes and fixture expressions remain intact.
+Independent literal/AST controls and two executable model calibrations guard this
+boundary before collecting the complete cohort. The dependency notice inventory
+explicitly lists missing files; it does not approve production redistribution.
 
 The Windows diagnostic uses a pinned Rust toolchain and dependency lockfile.
 Run the manual `Native research probes` Actions workflow to compile it. CI builds
