@@ -94,3 +94,17 @@ readiness require separate research evidence.
 Artifacts contain only the selected executable, dependency/identity manifests,
 lockfile and dependency license notices. Bootstrap source is retained separately
 to make diagnostic build failures reproducible.
+
+The isolated `crates/snapshot-research` diagnostic uses the same disposable
+package identity and frozen157-package dependency lock as the workbook-import
+diagnostic, with one separately selected binary. Its manual `Rust snapshot and
+context boundary research` workflow collects54 authored sequences on Linux and
+Windows: full snapshots, native-qualified value edits, counted volatile callbacks,
+targeted continuation, bounded read-only pages and cold/warm failure retries.
+The proposed snapshot/stamp checks may report contract differences. Callback
+panics contained by the workbook facade are distinct from engine unwinding.
+No production context/store/authentication or hard OS containment is qualified.
+Public receipts contain bounded identifiers, classes, hashes, revision/callback
+counters and strict telemetry; raw diagnostic payloads and all runtime files stay
+private. The new notice inventory includes the exact hash-reviewed r-efi6.0.0
+AUTHORS source; missing notices and distribution approval remain separate reviews.

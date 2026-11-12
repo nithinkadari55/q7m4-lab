@@ -1,0 +1,8 @@
+/*
+!/.gitignore
+!/Cargo.toml
+!/Cargo.lock
+!/snapshot.rs
+!/snapshot-fixtures.json
+!/run_snapshot_probe.py
+!/test_snapshot_controls.py
