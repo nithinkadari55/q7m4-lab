@@ -8,3 +8,7 @@
 !/prepare_fixtures.py
 !/run_probe.py
 !/test_supervisor_controls.py
+!/execution.rs
+!/execution-fixtures.json
+!/run_execution_probe.py
+!/test_execution_controls.py

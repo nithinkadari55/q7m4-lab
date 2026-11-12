@@ -1,0 +1,976 @@
+{
+  "schema": "native-qualified-mutation-and-execution-v1",
+  "source_commit": "dfd2f96457ff0929114a3e6b786c2761e6db5c5d",
+  "models": [
+    {
+      "id": "ordinary-chain",
+      "sheets": [
+        "Calc"
+      ],
+      "initial_cells": [
+        {
+          "sheet": "Calc",
+          "row": 1,
+          "col": 1,
+          "kind": "number",
+          "value": 1
+        },
+        {
+          "sheet": "Calc",
+          "row": 1,
+          "col": 2,
+          "kind": "formula",
+          "formula": "A1+1"
+        },
+        {
+          "sheet": "Calc",
+          "row": 1,
+          "col": 3,
+          "kind": "formula",
+          "formula": "B1*2"
+        }
+      ],
+      "initial_targets": [
+        {
+          "sheet": "Calc",
+          "row": 1,
+          "col": 3,
+          "expected": {
+            "kind": "number",
+            "value": 4.0
+          }
+        }
+      ],
+      "actions": [
+        {
+          "id": "set-input10",
+          "kind": "set_value",
+          "sheet": "Calc",
+          "row": 1,
+          "col": 1,
+          "value_kind": "number",
+          "value": 10,
+          "targets": [
+            {
+              "sheet": "Calc",
+              "row": 1,
+              "col": 3,
+              "expected": {
+                "kind": "number",
+                "value": 22.0
+              }
+            }
+          ]
+        },
+        {
+          "id": "set-input20",
+          "kind": "set_value",
+          "sheet": "Calc",
+          "row": 1,
+          "col": 1,
+          "value_kind": "number",
+          "value": 20,
+          "targets": [
+            {
+              "sheet": "Calc",
+              "row": 1,
+              "col": 3,
+              "expected": {
+                "kind": "number",
+                "value": 42.0
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cross-sheet-chain",
+      "sheets": [
+        "Inputs",
+        "Middle",
+        "Output"
+      ],
+      "initial_cells": [
+        {
+          "sheet": "Inputs",
+          "row": 1,
+          "col": 1,
+          "kind": "number",
+          "value": 2
+        },
+        {
+          "sheet": "Middle",
+          "row": 1,
+          "col": 2,
+          "kind": "formula",
+          "formula": "Inputs!A1+3"
+        },
+        {
+          "sheet": "Output",
+          "row": 1,
+          "col": 3,
+          "kind": "formula",
+          "formula": "Middle!B1*2"
+        }
+      ],
+      "initial_targets": [
+        {
+          "sheet": "Output",
+          "row": 1,
+          "col": 3,
+          "expected": {
+            "kind": "number",
+            "value": 10.0
+          }
+        }
+      ],
+      "actions": [
+        {
+          "id": "set-input10",
+          "kind": "set_value",
+          "sheet": "Inputs",
+          "row": 1,
+          "col": 1,
+          "value_kind": "number",
+          "value": 10,
+          "targets": [
+            {
+              "sheet": "Output",
+              "row": 1,
+              "col": 3,
+              "expected": {
+                "kind": "number",
+                "value": 26.0
+              }
+            }
+          ]
+        },
+        {
+          "id": "set-input20",
+          "kind": "set_value",
+          "sheet": "Inputs",
+          "row": 1,
+          "col": 1,
+          "value_kind": "number",
+          "value": 20,
+          "targets": [
+            {
+              "sheet": "Output",
+              "row": 1,
+              "col": 3,
+              "expected": {
+                "kind": "number",
+                "value": 46.0
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sum-range-edit",
+      "sheets": [
+        "Inputs",
+        "Calc"
+      ],
+      "initial_cells": [
+        {
+          "sheet": "Inputs",
+          "row": 1,
+          "col": 1,
+          "kind": "number",
+          "value": 1
+        },
+        {
+          "sheet": "Inputs",
+          "row": 2,
+          "col": 1,
+          "kind": "number",
+          "value": 2
+        },
+        {
+          "sheet": "Inputs",
+          "row": 3,
+          "col": 1,
+          "kind": "number",
+          "value": 3
+        },
+        {
+          "sheet": "Calc",
+          "row": 1,
+          "col": 2,
+          "kind": "formula",
+          "formula": "SUM(Inputs!A1:A3)"
+        },
+        {
+          "sheet": "Calc",
+          "row": 1,
+          "col": 3,
+          "kind": "formula",
+          "formula": "B1*2"
+        }
+      ],
+      "initial_targets": [
+        {
+          "sheet": "Calc",
+          "row": 1,
+          "col": 3,
+          "expected": {
+            "kind": "number",
+            "value": 12.0
+          }
+        }
+      ],
+      "actions": [
+        {
+          "id": "edit-middle-member",
+          "kind": "set_value",
+          "sheet": "Inputs",
+          "row": 2,
+          "col": 1,
+          "value_kind": "number",
+          "value": 20,
+          "targets": [
+            {
+              "sheet": "Calc",
+              "row": 1,
+              "col": 3,
+              "expected": {
+                "kind": "number",
+                "value": 48.0
+              }
+            }
+          ]
+        },
+        {
+          "id": "edit-last-member",
+          "kind": "set_value",
+          "sheet": "Inputs",
+          "row": 3,
+          "col": 1,
+          "value_kind": "number",
+          "value": -1,
+          "targets": [
+            {
+              "sheet": "Calc",
+              "row": 1,
+              "col": 3,
+              "expected": {
+                "kind": "number",
+                "value": 40.0
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "indirect-selector-rebind",
+      "sheets": [
+        "Calc"
+      ],
+      "initial_cells": [
+        {
+          "sheet": "Calc",
+          "row": 1,
+          "col": 1,
+          "kind": "text",
+          "value": "B1"
+        },
+        {
+          "sheet": "Calc",
+          "row": 1,
+          "col": 2,
+          "kind": "number",
+          "value": 2
+        },
+        {
+          "sheet": "Calc",
+          "row": 1,
+          "col": 3,
+          "kind": "number",
+          "value": 5
+        },
+        {
+          "sheet": "Calc",
+          "row": 1,
+          "col": 4,
+          "kind": "formula",
+          "formula": "INDIRECT(A1)"
+        },
+        {
+          "sheet": "Calc",
+          "row": 1,
+          "col": 5,
+          "kind": "formula",
+          "formula": "D1*2"
+        }
+      ],
+      "initial_targets": [
+        {
+          "sheet": "Calc",
+          "row": 1,
+          "col": 5,
+          "expected": {
+            "kind": "number",
+            "value": 4.0
+          }
+        }
+      ],
+      "actions": [
+        {
+          "id": "rebind-selector-new",
+          "kind": "set_value",
+          "sheet": "Calc",
+          "row": 1,
+          "col": 1,
+          "value_kind": "text",
+          "value": "C1",
+          "targets": [
+            {
+              "sheet": "Calc",
+              "row": 1,
+              "col": 5,
+              "expected": {
+                "kind": "number",
+                "value": 10.0
+              }
+            }
+          ]
+        },
+        {
+          "id": "edit-old-reference",
+          "kind": "set_value",
+          "sheet": "Calc",
+          "row": 1,
+          "col": 2,
+          "value_kind": "number",
+          "value": 100,
+          "targets": [
+            {
+              "sheet": "Calc",
+              "row": 1,
+              "col": 5,
+              "expected": {
+                "kind": "number",
+                "value": 10.0
+              }
+            }
+          ]
+        },
+        {
+          "id": "edit-new-reference",
+          "kind": "set_value",
+          "sheet": "Calc",
+          "row": 1,
+          "col": 3,
+          "value_kind": "number",
+          "value": 7,
+          "targets": [
+            {
+              "sheet": "Calc",
+              "row": 1,
+              "col": 5,
+              "expected": {
+                "kind": "number",
+                "value": 14.0
+              }
+            }
+          ]
+        },
+        {
+          "id": "rebind-selector-back",
+          "kind": "set_value",
+          "sheet": "Calc",
+          "row": 1,
+          "col": 1,
+          "value_kind": "text",
+          "value": "B1",
+          "targets": [
+            {
+              "sheet": "Calc",
+              "row": 1,
+              "col": 5,
+              "expected": {
+                "kind": "number",
+                "value": 200.0
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "workbook-name-rebind",
+      "sheets": [
+        "Inputs",
+        "Calc"
+      ],
+      "initial_cells": [
+        {
+          "sheet": "Inputs",
+          "row": 1,
+          "col": 1,
+          "kind": "number",
+          "value": 2
+        },
+        {
+          "sheet": "Inputs",
+          "row": 2,
+          "col": 1,
+          "kind": "number",
+          "value": 5
+        },
+        {
+          "sheet": "Calc",
+          "row": 1,
+          "col": 2,
+          "kind": "formula",
+          "formula": "SharedInput*2"
+        },
+        {
+          "sheet": "Calc",
+          "row": 1,
+          "col": 3,
+          "kind": "formula",
+          "formula": "B1+1"
+        }
+      ],
+      "initial_names": [
+        {
+          "name": "SharedInput",
+          "sheet": "Inputs",
+          "start_row": 1,
+          "start_col": 1,
+          "end_row": 1,
+          "end_col": 1
+        }
+      ],
+      "initial_targets": [
+        {
+          "sheet": "Calc",
+          "row": 1,
+          "col": 3,
+          "expected": {
+            "kind": "number",
+            "value": 5.0
+          }
+        }
+      ],
+      "actions": [
+        {
+          "id": "rebind-same-name",
+          "kind": "define_named_range",
+          "name": "SharedInput",
+          "sheet": "Inputs",
+          "start_row": 2,
+          "start_col": 1,
+          "end_row": 2,
+          "end_col": 1,
+          "targets": [
+            {
+              "sheet": "Calc",
+              "row": 1,
+              "col": 3,
+              "expected": {
+                "kind": "number",
+                "value": 11.0
+              }
+            }
+          ]
+        },
+        {
+          "id": "edit-old-reference",
+          "kind": "set_value",
+          "sheet": "Inputs",
+          "row": 1,
+          "col": 1,
+          "value_kind": "number",
+          "value": 100,
+          "targets": [
+            {
+              "sheet": "Calc",
+              "row": 1,
+              "col": 3,
+              "expected": {
+                "kind": "number",
+                "value": 11.0
+              }
+            }
+          ]
+        },
+        {
+          "id": "edit-new-reference",
+          "kind": "set_value",
+          "sheet": "Inputs",
+          "row": 2,
+          "col": 1,
+          "value_kind": "number",
+          "value": 8,
+          "targets": [
+            {
+              "sheet": "Calc",
+              "row": 1,
+              "col": 3,
+              "expected": {
+                "kind": "number",
+                "value": 17.0
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "formula-replacement",
+      "sheets": [
+        "Inputs",
+        "Calc"
+      ],
+      "initial_cells": [
+        {
+          "sheet": "Inputs",
+          "row": 1,
+          "col": 1,
+          "kind": "number",
+          "value": 2
+        },
+        {
+          "sheet": "Inputs",
+          "row": 1,
+          "col": 2,
+          "kind": "number",
+          "value": 5
+        },
+        {
+          "sheet": "Calc",
+          "row": 1,
+          "col": 1,
+          "kind": "formula",
+          "formula": "Inputs!A1+1"
+        },
+        {
+          "sheet": "Calc",
+          "row": 1,
+          "col": 2,
+          "kind": "formula",
+          "formula": "A1*2"
+        }
+      ],
+      "initial_targets": [
+        {
+          "sheet": "Calc",
+          "row": 1,
+          "col": 2,
+          "expected": {
+            "kind": "number",
+            "value": 6.0
+          }
+        }
+      ],
+      "actions": [
+        {
+          "id": "replace-precedent-formula",
+          "kind": "set_formula",
+          "sheet": "Calc",
+          "row": 1,
+          "col": 1,
+          "formula": "Inputs!B1+1",
+          "targets": [
+            {
+              "sheet": "Calc",
+              "row": 1,
+              "col": 2,
+              "expected": {
+                "kind": "number",
+                "value": 12.0
+              }
+            }
+          ]
+        },
+        {
+          "id": "edit-old-input",
+          "kind": "set_value",
+          "sheet": "Inputs",
+          "row": 1,
+          "col": 1,
+          "value_kind": "number",
+          "value": 100,
+          "targets": [
+            {
+              "sheet": "Calc",
+              "row": 1,
+              "col": 2,
+              "expected": {
+                "kind": "number",
+                "value": 12.0
+              }
+            }
+          ]
+        },
+        {
+          "id": "edit-new-input",
+          "kind": "set_value",
+          "sheet": "Inputs",
+          "row": 1,
+          "col": 2,
+          "value_kind": "number",
+          "value": 10,
+          "targets": [
+            {
+              "sheet": "Calc",
+              "row": 1,
+              "col": 2,
+              "expected": {
+                "kind": "number",
+                "value": 22.0
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "id": "control/cell",
+      "kind": "execution",
+      "route": "cell",
+      "expected": "success",
+      "reason": null,
+      "deferred": false
+    },
+    {
+      "id": "control/targets",
+      "kind": "execution",
+      "route": "targets",
+      "expected": "success",
+      "reason": null,
+      "deferred": false
+    },
+    {
+      "id": "control/deferred-targets",
+      "kind": "execution",
+      "route": "targets",
+      "expected": "success",
+      "reason": null,
+      "deferred": true
+    },
+    {
+      "id": "work/engine-zero-cell",
+      "kind": "execution",
+      "route": "cell",
+      "expected": "resource",
+      "reason": "work_units",
+      "deferred": false,
+      "engine_work": 0
+    },
+    {
+      "id": "work/engine-one-cell",
+      "kind": "execution",
+      "route": "cell",
+      "expected": "resource",
+      "reason": "work_units",
+      "deferred": false,
+      "engine_work": 1
+    },
+    {
+      "id": "work/engine-zero-targets",
+      "kind": "execution",
+      "route": "targets",
+      "expected": "resource",
+      "reason": "work_units",
+      "deferred": false,
+      "engine_work": 0
+    },
+    {
+      "id": "work/request-zero-eager",
+      "kind": "execution",
+      "route": "targets",
+      "expected": "resource",
+      "reason": "work_units",
+      "deferred": false,
+      "request_work": 0
+    },
+    {
+      "id": "work/request-high-engine-zero-eager",
+      "kind": "execution",
+      "route": "targets",
+      "expected": "success",
+      "reason": null,
+      "deferred": false,
+      "request_work": 1000000,
+      "engine_work": 0
+    },
+    {
+      "id": "work/request-zero-deferred",
+      "kind": "execution",
+      "route": "targets",
+      "expected": "resource",
+      "reason": "work_units",
+      "deferred": true,
+      "request_work": 0
+    },
+    {
+      "id": "work/request-high-engine-zero-deferred",
+      "kind": "execution",
+      "route": "targets",
+      "expected": "success",
+      "reason": null,
+      "deferred": true,
+      "request_work": 1000000,
+      "engine_work": 0
+    },
+    {
+      "id": "work/request-prepare-zero",
+      "kind": "execution",
+      "route": "prepare",
+      "expected": "resource",
+      "reason": "work_units",
+      "deferred": true,
+      "request_work": 0
+    },
+    {
+      "id": "work/request-prepare-high-engine-zero",
+      "kind": "execution",
+      "route": "prepare",
+      "expected": "success",
+      "reason": null,
+      "deferred": true,
+      "request_work": 1000000,
+      "engine_work": 0
+    },
+    {
+      "id": "deadline/engine-zero",
+      "kind": "execution",
+      "route": "cell",
+      "expected": "resource",
+      "reason": "deadline",
+      "deferred": false,
+      "engine_deadline_ms": 0
+    },
+    {
+      "id": "deadline/request-budget-zero",
+      "kind": "execution",
+      "route": "targets",
+      "expected": "resource",
+      "reason": "deadline",
+      "deferred": false,
+      "request_deadline_ms": 0
+    },
+    {
+      "id": "deadline/explicit-past",
+      "kind": "execution",
+      "route": "targets",
+      "expected": "resource",
+      "reason": "deadline",
+      "deferred": false,
+      "explicit_deadline": "past"
+    },
+    {
+      "id": "cancel/pre-cells",
+      "kind": "execution",
+      "route": "cells",
+      "expected": "cancelled",
+      "reason": null,
+      "deferred": false,
+      "cancel": "pre"
+    },
+    {
+      "id": "cancel/pre-targets",
+      "kind": "execution",
+      "route": "targets",
+      "expected": "cancelled",
+      "reason": null,
+      "deferred": false,
+      "cancel": "pre"
+    },
+    {
+      "id": "cancel/pre-all",
+      "kind": "execution",
+      "route": "all",
+      "expected": "cancelled",
+      "reason": null,
+      "deferred": false,
+      "cancel": "pre"
+    },
+    {
+      "id": "cancel/pre-prepare",
+      "kind": "execution",
+      "route": "prepare",
+      "expected": "cancelled",
+      "reason": null,
+      "deferred": true,
+      "cancel": "pre"
+    },
+    {
+      "id": "cancel/pre-plan",
+      "kind": "execution",
+      "route": "plan",
+      "expected": "cancelled",
+      "reason": null,
+      "deferred": false,
+      "cancel": "pre"
+    },
+    {
+      "id": "cancel/in-handler-value-cells",
+      "kind": "execution",
+      "route": "cells",
+      "expected": "cancelled",
+      "reason": null,
+      "deferred": false,
+      "cancel": "handler-value"
+    },
+    {
+      "id": "cancel/in-handler-value-targets",
+      "kind": "execution",
+      "route": "targets",
+      "expected": "cancelled",
+      "reason": null,
+      "deferred": false,
+      "cancel": "handler-value"
+    },
+    {
+      "id": "cancel/in-handler-value-all",
+      "kind": "execution",
+      "route": "all",
+      "expected": "cancelled",
+      "reason": null,
+      "deferred": false,
+      "cancel": "handler-value"
+    },
+    {
+      "id": "cancel/in-handler-value-plan",
+      "kind": "execution",
+      "route": "plan",
+      "expected": "cancelled",
+      "reason": null,
+      "deferred": false,
+      "cancel": "handler-value"
+    },
+    {
+      "id": "cancel/in-handler-error-targets",
+      "kind": "execution",
+      "route": "targets",
+      "expected": "cancelled",
+      "reason": null,
+      "deferred": false,
+      "cancel": "handler-error"
+    },
+    {
+      "id": "cancel/error-value-without-token",
+      "kind": "execution",
+      "route": "targets",
+      "expected": "cell_error",
+      "reason": "#CANCELLED!",
+      "deferred": false,
+      "cancel": "error-value-only"
+    },
+    {
+      "id": "deadline/in-handler-observation",
+      "kind": "execution",
+      "route": "targets",
+      "expected": "observe",
+      "reason": null,
+      "deferred": false,
+      "cancel": "deadline-handler",
+      "explicit_deadline": "during-handler"
+    },
+    {
+      "id": "array/engine-zero",
+      "kind": "execution",
+      "route": "cell",
+      "expected": "cell_error",
+      "reason": "#NUM!",
+      "deferred": false,
+      "engine_array": 0,
+      "array": true
+    },
+    {
+      "id": "array/request-zero",
+      "kind": "execution",
+      "route": "targets",
+      "expected": "cell_error",
+      "reason": "#NUM!",
+      "deferred": false,
+      "request_array": 0,
+      "array": true
+    },
+    {
+      "id": "mutation/eager/ordinary-chain",
+      "kind": "mutation",
+      "deferred": false,
+      "model_id": "ordinary-chain"
+    },
+    {
+      "id": "mutation/eager/cross-sheet-chain",
+      "kind": "mutation",
+      "deferred": false,
+      "model_id": "cross-sheet-chain"
+    },
+    {
+      "id": "mutation/eager/sum-range-edit",
+      "kind": "mutation",
+      "deferred": false,
+      "model_id": "sum-range-edit"
+    },
+    {
+      "id": "mutation/eager/indirect-selector-rebind",
+      "kind": "mutation",
+      "deferred": false,
+      "model_id": "indirect-selector-rebind"
+    },
+    {
+      "id": "mutation/eager/workbook-name-rebind",
+      "kind": "mutation",
+      "deferred": false,
+      "model_id": "workbook-name-rebind"
+    },
+    {
+      "id": "mutation/eager/formula-replacement",
+      "kind": "mutation",
+      "deferred": false,
+      "model_id": "formula-replacement"
+    },
+    {
+      "id": "mutation/deferred/ordinary-chain",
+      "kind": "mutation",
+      "deferred": true,
+      "model_id": "ordinary-chain"
+    },
+    {
+      "id": "mutation/deferred/cross-sheet-chain",
+      "kind": "mutation",
+      "deferred": true,
+      "model_id": "cross-sheet-chain"
+    },
+    {
+      "id": "mutation/deferred/sum-range-edit",
+      "kind": "mutation",
+      "deferred": true,
+      "model_id": "sum-range-edit"
+    },
+    {
+      "id": "mutation/deferred/indirect-selector-rebind",
+      "kind": "mutation",
+      "deferred": true,
+      "model_id": "indirect-selector-rebind"
+    },
+    {
+      "id": "mutation/deferred/workbook-name-rebind",
+      "kind": "mutation",
+      "deferred": true,
+      "model_id": "workbook-name-rebind"
+    },
+    {
+      "id": "mutation/deferred/formula-replacement",
+      "kind": "mutation",
+      "deferred": true,
+      "model_id": "formula-replacement"
+    }
+  ],
+  "scope": "Authored in-memory mutation outcomes and engine/request resource/cancellation boundaries; no source files, save/export or production sandbox",
+  "numeric_absolute_tolerance": 1e-10,
+  "native_mutation_manifest_sha256": "079fbb37eff7bfee0dcadb41f00ac5f3dacf86606830abb5d26feaf72efaaac6"
+}

@@ -10,6 +10,10 @@ publish = false
 name = "formualizer-workbook-import-probe"
 path = "probe.rs"
 
+[[bin]]
+name = "formualizer-execution-boundary-probe"
+path = "execution.rs"
+
 [dependencies]
 formualizer-workbook = { git = "https://github.com/psu3d0/formualizer", rev = "dfd2f96457ff0929114a3e6b786c2761e6db5c5d", version = "=0.13.0", default-features = false, features = ["json", "xlsx-recalc"] }
 formualizer-eval = { git = "https://github.com/psu3d0/formualizer", rev = "dfd2f96457ff0929114a3e6b786c2761e6db5c5d", version = "=0.13.0", default-features = false }
